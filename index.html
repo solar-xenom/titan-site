@@ -247,21 +247,47 @@ footer{border-top:1px solid var(--line);padding:24px 20px;text-align:center;font
     <h1>Staff</h1>
     <div id="loginArea" class="panel" style="max-width:440px">
       <h3>Staff login</h3>
+      <div class="field" id="nameField" hidden><label for="loginName">Your name</label><input type="text" id="loginName" maxlength="60" autocomplete="name"></div>
       <div class="field"><label for="loginEmail">Email</label><input type="text" id="loginEmail" autocomplete="username"></div>
       <div class="field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:3px;background:var(--paper);color:var(--ink)"></div>
-      <button class="btn primary" id="loginBtn">Log in</button>
-      <p id="loginMsg" class="note" style="margin-top:10px"></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" id="loginBtn">Log in</button>
+        <button class="btn" id="signupBtn">Create staff account</button>
+      </div>
+      <p class="note" style="margin-top:10px">New employees create an account here. The owner approves it before it can do anything.</p>
+      <p id="loginMsg" class="note" style="margin-top:6px"></p>
+    </div>
+    <div id="pendingArea" class="panel" style="max-width:480px" hidden>
+      <h3>Waiting for approval</h3>
+      <div id="pendingBody"></div>
+      <button class="btn small" id="logoutBtn2" style="margin-top:10px">Log out</button>
     </div>
     <div id="staffArea" hidden>
-    <p style="margin-bottom:0"><button class="btn small" id="logoutBtn">Log out</button></p>
+    <p style="margin-bottom:0"><span id="whoami" class="note"></span> <button class="btn small" id="logoutBtn">Log out</button></p>
     <div class="staff-nav" role="tablist">
       <button class="chip" data-staff="inventory" aria-pressed="true">Inventory</button>
       <button class="chip" data-staff="events" aria-pressed="false">Game nights</button>
       <button class="chip" data-staff="news" aria-pressed="false">Announcements</button>
+      <button class="chip" data-staff="team" aria-pressed="false" id="teamChip" hidden>Team</button>
+    </div>
+
+    <div data-pane="team" hidden>
+      <div class="panel">
+        <h3>Waiting for approval</h3>
+        <div id="teamPending"></div>
+      </div>
+      <div class="panel">
+        <h3>Current staff</h3>
+        <p class="note">Owners can do everything. Employees can post game nights and announcements, update stock, and remove sign-ups, but can't delete items, game nights, or announcements, upload a full CSV, or manage staff.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+          <tbody id="teamTable"></tbody>
+        </table></div>
+      </div>
     </div>
 
     <div data-pane="inventory">
-      <div class="panel">
+      <div class="panel" id="csvPanel">
         <h3>Upload inventory</h3>
         <p class="note">Save a spreadsheet as CSV with these columns. Rows with a SKU that already exists get updated. New SKUs get added.</p>
         <div class="csv-hint">sku,name,category,price,qty
@@ -338,7 +364,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
-// ============ SUPABASE Key and Site HERE ============
+// ============ PASTE YOUR SUPABASE KEYS HERE ============
 const SUPABASE_URL = "https://inbggcmmbrykksmpoacy.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_XGn7Tf-TQcP0m-8B2zlooQ_h7O78AsI";
 // =======================================================
@@ -348,8 +374,8 @@ const CATS = {
   dnd:{label:"D&D & RPGs"}, tcg:{label:"Trading cards"}, models:{label:"Model kits"},
   board:{label:"Board games"}, collectibles:{label:"Funko & collectibles"}, accessories:{label:"Dice, sleeves & supplies"}
 };
-const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, shopCat:"all" };
-const configured = !SUPABASE_URL.includes("YOUR-PROJECT");
+const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, request:null, team:[], requests:[], shopCat:"all" };
+const configured = !SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
 const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 const $ = s => document.querySelector(s);
@@ -374,7 +400,10 @@ function route(){
     if(a.getAttribute("href")==="#"+v) a.setAttribute("aria-current","page"); else a.removeAttribute("aria-current");
   });
   $("#staffArea").hidden = !state.isStaff;
-  $("#loginArea").hidden = state.isStaff;
+  $("#loginArea").hidden = !!state.user;
+  $("#pendingArea").hidden = !state.user || state.isStaff;
+  $("#teamChip").hidden = !state.isOwner;
+  $("#csvPanel").hidden = !state.isOwner;
   window.scrollTo(0,0);
 }
 window.addEventListener("hashchange", route);
@@ -403,7 +432,7 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase keys at the top of the script to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam()]);
     setStatus("");
   }catch(e){
     console.error(e);
@@ -414,14 +443,54 @@ async function loadAll(){
 
 /* ---------- staff login ---------- */
 async function refreshStaff(){
-  state.isStaff = false;
+  state.isStaff = false; state.isOwner = false; state.request = null;
   const { data:{ session } } = await sb.auth.getSession();
-  if(session){
-    const { data } = await sb.from("staff").select("user_id").eq("user_id", session.user.id).maybeSingle();
+  state.user = session ? session.user : null;
+  if(state.user){
+    const { data } = await sb.from("staff").select("role,name").eq("user_id", state.user.id).maybeSingle();
     state.isStaff = !!data;
-    $("#loginMsg").textContent = data ? "" : "You're logged in, but this account isn't on the staff list yet.";
+    state.isOwner = data?.role === "owner";
+    if(data){
+      $("#whoami").textContent = `Logged in as ${data.name || state.user.email} (${data.role}).`;
+    } else {
+      const req = await sb.from("staff_requests").select("*").eq("user_id", state.user.id).maybeSingle();
+      state.request = req.data || null;
+    }
   }
   $("#staffLink").hidden = !state.isStaff;
+  renderPending();
+}
+function renderPending(){
+  if(!state.user || state.isStaff){ $("#pendingBody").innerHTML = ""; return; }
+  $("#pendingBody").innerHTML = state.request
+    ? `<p>Thanks, ${esc(state.request.name)}. Your request is waiting for the owner to approve it. Check back after they've had a chance to look.</p>`
+    : `<p>You're logged in as ${esc(state.user.email)}, but this account isn't on the staff list. Ask the owner for access.</p>
+       <div class="field"><label for="reqName">Your name</label><input type="text" id="reqName" maxlength="60"></div>
+       <button class="btn primary" id="requestBtn">Request staff access</button>`;
+}
+async function loadTeam(){
+  if(!state.isOwner){ state.team = []; state.requests = []; return; }
+  state.team = must(await sb.from("staff").select("*"));
+  state.requests = must(await sb.from("staff_requests").select("*").order("created_at"));
+}
+function renderTeam(){
+  if(!state.isOwner) return;
+  $("#teamPending").innerHTML = state.requests.length ? state.requests.map(r => `
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><strong>${esc(r.name)}</strong><br><span class="note">${esc(r.email||"")}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn small primary" data-approve="${esc(r.user_id)}" data-role="employee">Approve as employee</button>
+        <button class="btn small" data-approve="${esc(r.user_id)}" data-role="owner">Approve as owner</button>
+        <button class="btn small danger" data-decline="${esc(r.user_id)}">Decline</button>
+      </div></div>`).join("") : `<p class="note">No one is waiting.</p>`;
+  $("#teamTable").innerHTML = state.team.sort((a,b)=>(a.name||a.email||"").localeCompare(b.name||b.email||"")).map(m => {
+    const me = m.user_id === state.user?.id;
+    return `<tr><td><input type="text" value="${esc(m.name||"")}" placeholder="Add a name" maxlength="60" data-setname="${esc(m.user_id)}" aria-label="Name" style="max-width:220px">${me?' <span class="note">(you)</span>':""}</td><td>${esc(m.email||"")}</td>
+      <td>${me ? esc(m.role) : `<select data-setrole="${esc(m.user_id)}" aria-label="Role for ${esc(m.name||m.email||"staff")}">
+        <option value="employee" ${m.role==="employee"?"selected":""}>Employee</option>
+        <option value="owner" ${m.role==="owner"?"selected":""}>Owner</option></select>`}</td>
+      <td>${me ? "" : `<button class="btn small danger" data-remove-staff="${esc(m.user_id)}">Remove</button>`}</td></tr>`;
+  }).join("");
 }
 
 /* ---------- rendering ---------- */
@@ -475,7 +544,7 @@ function eventCard(e, staff){
   if(staff){
     const r = rosterFor(e.id);
     html += r.length ? `<ol class="roster">${r.map(x=>`<li>${esc(x.name)}${x.contact?` <span class="muted">(${esc(x.contact)})</span>`:""} <button class="btn small danger" data-del-signup="${esc(x.id)}">Remove</button></li>`).join("")}</ol>` : `<p class="note" style="margin-top:8px">No sign-ups yet.</p>`;
-    html += `<button class="btn small danger" data-del-event="${esc(e.id)}" style="margin-top:8px">Delete game night</button>`;
+    if(state.isOwner) html += `<button class="btn small danger" data-del-event="${esc(e.id)}" style="margin-top:8px">Delete game night</button>`;
   } else if(!full){
     html += `<form class="signup-form" data-signup="${esc(e.id)}">
       <input type="text" name="name" placeholder="Your name" required maxlength="60" aria-label="Your name">
@@ -497,7 +566,7 @@ function sortedNews(){ return [...state.news].sort((a,b)=> (b.pinned?1:0)-(a.pin
 function postHtml(p, staff){
   return `<article class="post ${p.pinned?"pinned":""}"><div class="when">${p.pinned?"Pinned. ":""}${new Date(p.createdAt).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}</div>
     <h3>${esc(p.title)}</h3><div class="body">${esc(p.body)}</div>
-    ${staff?`<div style="margin-top:10px;display:flex;gap:8px"><button class="btn small" data-pin="${esc(p.id)}">${p.pinned?"Unpin":"Pin"}</button><button class="btn small danger" data-del-news="${esc(p.id)}">Delete</button></div>`:""}</article>`;
+    ${staff?`<div style="margin-top:10px;display:flex;gap:8px"><button class="btn small" data-pin="${esc(p.id)}">${p.pinned?"Unpin":"Pin"}</button>${state.isOwner?`<button class="btn small danger" data-del-news="${esc(p.id)}">Delete</button>`:""}</div>`:""}</article>`;
 }
 function renderNews(){
   const list = sortedNews();
@@ -510,7 +579,7 @@ function renderInventoryTable(){
     .sort((a,b)=>a.name.localeCompare(b.name));
   $("#invTable").innerHTML = list.length ? list.map(i => `<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td>${esc(CATS[i.category]?.label||i.category)}</td>
     <td class="num">${money(i.price)}</td><td class="num"><input type="number" min="0" value="${i.qty}" data-qty="${esc(i.sku)}" aria-label="Quantity for ${esc(i.name)}"></td>
-    <td><button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button></td></tr>`).join("") :
+    <td>${state.isOwner?`<button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button>`:""}</td></tr>`).join("") :
     `<tr><td colspan="6" class="muted">No items yet. Upload a CSV or add one above.</td></tr>`;
 }
 function renderStaffEvents(){
@@ -520,7 +589,7 @@ function renderStaffNews(){ $("#staffNews").innerHTML = sortedNews().map(p=>post
 
 function renderAll(){
   renderHome(); renderShop(); renderEvents(); renderNews();
-  if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); }
+  if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); }
 }
 
 /* ---------- clicks ---------- */
@@ -539,7 +608,35 @@ document.addEventListener("click", async ev => {
       const { error } = await sb.auth.signInWithPassword({ email:$("#loginEmail").value.trim(), password:$("#loginPass").value });
       $("#loginMsg").textContent = error ? error.message : "";
     }
-    else if(t.id==="logoutBtn"){ await sb.auth.signOut(); location.hash = "#home"; }
+    else if(t.id==="signupBtn"){
+      const nf = $("#nameField");
+      if(nf.hidden){ nf.hidden = false; $("#loginName").focus(); $("#loginMsg").textContent = "Enter your name, email, and a password, then click Create staff account again."; return; }
+      const name = $("#loginName").value.trim(), email = $("#loginEmail").value.trim(), password = $("#loginPass").value;
+      if(!name || !email || password.length < 6){ $("#loginMsg").textContent = "Fill in your name, email, and a password of at least 6 characters."; return; }
+      const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ name } } });
+      if(error){ $("#loginMsg").textContent = error.message; return; }
+      if(!data.session){ $("#loginMsg").textContent = "Check your email to confirm your account, then come back and log in."; return; }
+      must(await sb.from("staff_requests").insert({ user_id:data.user.id, name, email }));
+      await refreshStaff(); route();
+    }
+    else if(t.id==="requestBtn"){
+      const name = $("#reqName").value.trim(); if(!name){ toast("Add your name"); return; }
+      must(await sb.from("staff_requests").insert({ user_id:state.user.id, name, email:state.user.email }));
+      await refreshStaff(); route();
+    }
+    else if(t.dataset.approve){
+      const r = state.requests.find(x => x.user_id === t.dataset.approve);
+      must(await sb.from("staff").insert({ user_id:r.user_id, role:t.dataset.role, name:r.name, email:r.email }));
+      must(await sb.from("staff_requests").delete().eq("user_id", r.user_id));
+      await loadTeam(); renderTeam(); toast(`${r.name} approved as ${t.dataset.role}`);
+    }
+    else if(t.dataset.decline){
+      if(confirm("Decline this request?")){ must(await sb.from("staff_requests").delete().eq("user_id", t.dataset.decline)); await loadTeam(); renderTeam(); toast("Request declined"); }
+    }
+    else if(t.dataset.removeStaff){
+      if(confirm("Remove this person from staff? They'll lose access right away.")){ must(await sb.from("staff").delete().eq("user_id", t.dataset.removeStaff)); await loadTeam(); renderTeam(); toast("Removed from staff"); }
+    }
+    else if(t.id==="logoutBtn" || t.id==="logoutBtn2"){ await sb.auth.signOut(); location.hash = "#home"; }
     else if(t.dataset.delItem){ if(confirm("Delete this item from inventory?")){ must(await sb.from("products").delete().eq("sku", t.dataset.delItem)); await loadProducts(); renderAll(); toast("Item deleted"); } }
     else if(t.dataset.delEvent){ if(confirm("Delete this game night and its sign-ups?")){ must(await sb.from("events").delete().eq("id", t.dataset.delEvent)); await Promise.all([loadEvents(), loadRoster(), loadCounts()]); renderAll(); toast("Game night deleted"); } }
     else if(t.dataset.delSignup){ must(await sb.from("signups").delete().eq("id", t.dataset.delSignup)); await Promise.all([loadRoster(), loadCounts()]); renderAll(); toast("Sign-up removed"); }
@@ -577,6 +674,18 @@ $("#niCat").innerHTML = Object.entries(CATS).map(([k,c])=>`<option value="${k}">
 
 /* ---------- staff edits ---------- */
 document.addEventListener("change", async ev => {
+  const nm = ev.target.closest("[data-setname]");
+  if(nm && sb){
+    try{ must(await sb.from("staff").update({ name:nm.value.trim() || null }).eq("user_id", nm.dataset.setname)); toast("Name saved"); }
+    catch(e){ handleError(e); }
+    await loadTeam(); renderTeam(); await refreshStaff(); return;
+  }
+  const sel = ev.target.closest("[data-setrole]");
+  if(sel && sb){
+    try{ must(await sb.from("staff").update({ role:sel.value }).eq("user_id", sel.dataset.setrole)); toast("Role updated"); }
+    catch(e){ handleError(e); }
+    await loadTeam(); renderTeam(); return;
+  }
   const inp = ev.target.closest("[data-qty]"); if(!inp || !sb) return;
   const v = Math.max(0, parseInt(inp.value,10)||0);
   try{ must(await sb.from("products").update({qty:v, updated_at:nowIso()}).eq("sku", inp.dataset.qty)); await loadProducts(); renderHome(); renderShop(); toast("Stock updated"); }
