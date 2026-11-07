@@ -208,7 +208,7 @@ function renderHome(){
     const [y,m,d] = e.date.split("-").map(Number); const dt=new Date(y,m-1,d);
     return `<div class="ev-row"><div class="date-chip"><b>${dt.getDate()}</b><span>${dt.toLocaleDateString(undefined,{month:"short"})}</span></div>
       <div><span class="game-tag ${e.game}">${e.game==="dnd"?"D&D":"TCG"}</span><strong>${esc(e.title)}</strong><div class="note">${esc(fmtDate(e.date,{weekday:"long"}))} at ${esc(fmtTime(e.time))}</div></div>
-      <div class="seats ${full?"full":""}">${full?"Full":`${e.seats-n} seats left`}</div></div>`;
+      <div class="seats ${full?"full":""}">${full?"Full":`${e.seats-n} seat${e.seats-n===1?"":"s"} left`}</div></div>`;
   }).join("") : `<p class="muted" style="margin:8px 0">No game nights posted yet.</p>`;
   const news = sortedNews().slice(0,2);
   $("#homeNews").innerHTML = news.length ? news.map(p=>postHtml(p,false)).join("") : `<p class="muted">No announcements yet.</p>`;
