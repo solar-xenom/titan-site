@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Titan Game and Hobby</title>
+<script>
+/* Apply saved light/dark mode and last seasonal theme before the page draws */
+(function(){
+  var m = "dark", s = "none";
+  try { m = localStorage.getItem("titan-mode") || "dark"; s = localStorage.getItem("titan-season") || "none"; } catch(e) {}
+  document.documentElement.setAttribute("data-mode", m);
+  document.documentElement.setAttribute("data-season", s);
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,28 +31,60 @@
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ color-scheme: dark; } }
 :root[data-theme="dark"]{ color-scheme: dark; }
+/* header stays dark in every mode */
+:root{ --h-bg:#0E0B09; --h-ink:#EDE2CB; --h-muted:#B4A587; --h-gold:#D9A845; --h-line:#3D3026;
+  --on-accent:#F6EBD6; --accent-hover:#A82826; --shadow:0 10px 30px rgba(0,0,0,.45); --placeholder:#7D705A;
+  --glow:rgba(194,49,47,.16); }
+
+/* ---------- LIGHT MODE ---------- */
+html[data-mode="light"]{
+  --paper:#F3EBDD; --surface:#FFFAF1; --raised:#EDE2CC; --ink:#2B1F15; --muted:#6B5843; --line:#DCCBAE;
+  --blue:#6A48C0; --blue-ink:#FFFFFF; --red:#A8231F; --red-soft:#A8231F; --gold:#87600F; --gold-ink:#FFFAF1;
+  --green:#2F7A35; --soft:#EDE2CC; --accent-hover:#8E1C19; --shadow:0 8px 24px rgba(60,40,20,.12);
+  --placeholder:#9A8A72; --glow:rgba(168,35,31,.08); color-scheme:light;
+}
+
+/* ---------- CHRISTMAS ---------- */
+html[data-season="christmas"]{ --red:#B5172F; --red-soft:#E2475A; --blue:#2E8B57; --blue-ink:#F4FFF7; --accent-hover:#951226; --h-gold:#E3C35A; --glow:rgba(46,139,87,.18); }
+html[data-season="christmas"][data-mode="dark"]{ --paper:#0F1510; --surface:#172019; --raised:#1F2A21; --line:#2E3B30; --soft:#1F2A21; --green:#7CCB8A; }
+html[data-season="christmas"][data-mode="light"]{ --paper:#F5F1E8; --surface:#FFFDF8; --raised:#E9EFE4; --line:#D3DCC9; --soft:#E9EFE4; --blue:#1F6E43; --red-soft:#B5172F; --gold:#7E5E0E; --glow:rgba(31,110,67,.08); }
+
+/* ---------- HALLOWEEN ---------- */
+html[data-season="halloween"]{ --red:#D35F1C; --red-soft:#F08A47; --blue:#8E5BD8; --accent-hover:#B44F14; --h-gold:#F0A23B; --on-accent:#1A0F08; --glow:rgba(211,95,28,.18); }
+html[data-season="halloween"][data-mode="dark"]{ --paper:#120E15; --surface:#1C1621; --raised:#251D2B; --line:#3A2E42; --soft:#251D2B; --gold:#F0A23B; }
+html[data-season="halloween"][data-mode="light"]{ --paper:#FBF2E7; --surface:#FFFAF4; --raised:#F3E3D2; --line:#E5CDB3; --soft:#F3E3D2; --red:#B9500F; --red-soft:#B9500F; --gold:#9A5A0B; --blue:#6A3FB8; --on-accent:#FFFFFF; --glow:rgba(185,80,15,.08); }
+
+/* falling snow for Christmas */
+#season-fx{position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+#season-fx i{position:absolute;top:-12px;border-radius:50%;background:#FFFFFF;animation:titan-fall linear infinite}
+html[data-mode="light"] #season-fx i{background:#A9BCCB}
+@keyframes titan-fall{to{transform:translate3d(var(--dx),105vh,0)}}
+
+.mode-btn{background:none;border:1px solid var(--h-line);color:var(--h-gold);border-radius:3px;padding:6px 10px;cursor:pointer;font-family:var(--display);font-size:13px;letter-spacing:.5px;white-space:nowrap}
+.mode-btn:hover{border-color:var(--h-gold)}
+
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 80px)}
 body{margin:0;color:var(--ink);font-family:var(--body);font-size:18px;line-height:1.6;
   background:var(--paper);
-  background-image:radial-gradient(ellipse 80% 50% at 50% -10%, rgba(194,49,47,.16), transparent 70%);
+  background-image:radial-gradient(ellipse 80% 50% at 50% -10%, var(--glow), transparent 70%);
   background-attachment:fixed}
 img{max-width:100%}
 a{color:var(--gold)}
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--gold);outline-offset:2px}
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:#0E0B09}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--h-bg)}
 
 /* header */
-header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:#0E0B09;color:var(--ink);border-bottom:1px solid var(--line);box-shadow:0 1px 0 rgba(217,168,69,.25)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--h-bg);color:var(--h-ink);border-bottom:1px solid var(--h-line);box-shadow:0 1px 0 rgba(217,168,69,.25)}
 .top-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;gap:20px;padding:12px 20px;flex-wrap:wrap}
-.logo{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:3px;text-decoration:none;color:var(--gold);line-height:1;display:flex;align-items:center;gap:10px}
+.logo{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:3px;text-decoration:none;color:var(--h-gold);line-height:1;display:flex;align-items:center;gap:10px}
 .logo svg{width:30px;height:30px;flex:none}
-.logo small{display:block;font-family:var(--body);font-weight:500;font-style:italic;font-size:14px;letter-spacing:.5px;color:var(--muted);margin-top:3px}
+.logo small{display:block;font-family:var(--body);font-weight:500;font-style:italic;font-size:14px;letter-spacing:.5px;color:var(--h-muted);margin-top:3px}
 nav.tabs{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
-nav.tabs a{color:var(--muted);text-decoration:none;font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:1px;padding:8px 12px;border-bottom:2px solid transparent}
-nav.tabs a[aria-current="page"]{color:var(--gold);border-bottom-color:var(--red)}
-nav.tabs a:hover:not([aria-current="page"]){color:var(--ink)}
+nav.tabs a{color:var(--h-muted);text-decoration:none;font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:1px;padding:8px 12px;border-bottom:2px solid transparent}
+nav.tabs a[aria-current="page"]{color:var(--h-gold);border-bottom-color:var(--red)}
+nav.tabs a:hover:not([aria-current="page"]){color:var(--h-ink)}
 
 main{max-width:1120px;margin:0 auto;padding:32px 20px 64px}
 .view[hidden]{display:none}
@@ -65,7 +106,7 @@ p{margin:0 0 12px;max-width:66ch}
 .shelf{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .shelf a{display:inline-block;padding:6px 14px;border:1px solid var(--gold);border-radius:3px;text-decoration:none;color:var(--gold);font-weight:500;font-size:16px}
 .shelf a:hover{background:var(--gold);color:var(--gold-ink)}
-.board{background:var(--surface);border-top:4px solid var(--gold);border-bottom:4px solid var(--gold);padding:18px 22px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.board{background:var(--surface);border-top:4px solid var(--gold);border-bottom:4px solid var(--gold);padding:18px 22px;box-shadow:var(--shadow)}
 .board h2{font-size:22px;color:var(--red-soft);margin-bottom:0}
 .ev-row{display:grid;grid-template-columns:58px 1fr auto;gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
 .ev-row:first-of-type{border-top:0}
@@ -74,7 +115,7 @@ p{margin:0 0 12px;max-width:66ch}
 .date-chip span{font-size:12px;font-weight:700;color:var(--muted);text-transform:none}
 .game-tag{display:inline-block;font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:1px;padding:1px 7px;margin-right:6px;vertical-align:2px;border-radius:2px}
 .game-tag.tcg{background:var(--blue);color:var(--blue-ink)}
-.game-tag.dnd{background:var(--red);color:#F6EBD6}
+.game-tag.dnd{background:var(--red);color:var(--on-accent)}
 .seats{font-size:15px;font-weight:700;white-space:nowrap;color:var(--green)}
 .seats.full{color:var(--red-soft)}
 .home-cols{display:grid;grid-template-columns:1fr 1fr;gap:36px}
@@ -82,14 +123,14 @@ p{margin:0 0 12px;max-width:66ch}
 /* buttons/forms */
 .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-family:var(--display);font-weight:600;letter-spacing:.5px;padding:8px 16px;border-radius:3px;cursor:pointer;text-decoration:none;font-size:15px}
 .btn:hover{background:rgba(217,168,69,.12)}
-.btn.primary{background:var(--red);border-color:var(--red);color:#F6EBD6}
-.btn.primary:hover{background:#A82826}
+.btn.primary{background:var(--red);border-color:var(--red);color:var(--on-accent)}
+.btn.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
 .btn.danger{border-color:var(--red-soft);color:var(--red-soft)}
 .btn.small{padding:3px 10px;font-size:13px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 label{display:block;font-weight:700;font-size:15px;margin-bottom:4px;color:var(--muted)}
 input[type=text],input[type=number],input[type=date],input[type=time],input[type=search],select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:3px;background:var(--paper);color:var(--ink)}
-input::placeholder,textarea::placeholder{color:#7D705A}
+input::placeholder,textarea::placeholder{color:var(--placeholder)}
 input:focus,select:focus,textarea:focus{border-color:var(--gold);outline:none;box-shadow:0 0 0 3px rgba(217,168,69,.2)}
 input[type=checkbox]{accent-color:var(--red)}
 .field{margin-bottom:12px}
@@ -160,10 +201,11 @@ footer{border-top:1px solid var(--line);padding:24px 20px;text-align:center;font
   .hero-d20{display:none}
 }
 @media (max-width:480px){.grid2,.grid3{grid-template-columns:1fr}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}#season-fx{display:none}}
 </style>
 </head>
 <body>
+<div id="season-fx" aria-hidden="true"></div>
 <header class="top">
   <div class="top-inner">
     <a class="logo" href="#home"><svg viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"><polygon points="50,4 92,28 92,72 50,96 8,72 8,28"/><polygon points="50,24 76,66 24,66"/><path d="M50 4 50 24M92 28 76 66M92 72 76 66M50 96 76 66M50 96 24 66M8 72 24 66M8 28 24 66M8 28 50 24M92 28 50 24"/></svg><span>TITAN<small>Game and Hobby</small></span></a>
@@ -174,6 +216,7 @@ footer{border-top:1px solid var(--line);padding:24px 20px;text-align:center;font
       <a href="#news">Announcements</a>
       <a href="#staff" id="staffLink" hidden>Staff</a>
     </nav>
+    <button class="mode-btn" id="modeBtn" type="button"></button>
   </div>
 </header>
 
@@ -269,6 +312,16 @@ footer{border-top:1px solid var(--line);padding:24px 20px;text-align:center;font
       <button class="chip" data-staff="events" aria-pressed="false">Game nights</button>
       <button class="chip" data-staff="news" aria-pressed="false">Announcements</button>
       <button class="chip" data-staff="team" aria-pressed="false" id="teamChip" hidden>Team</button>
+      <button class="chip" data-staff="look" aria-pressed="false" id="lookChip" hidden>Seasonal theme</button>
+    </div>
+
+    <div data-pane="look" hidden>
+      <div class="panel" style="max-width:520px">
+        <h3>Seasonal theme</h3>
+        <p class="note">Changes the colors for every visitor in both light and dark mode. Christmas adds falling snow. Visitors still pick light or dark for themselves.</p>
+        <div class="field"><label for="seasonSel">Theme</label><select id="seasonSel"></select></div>
+        <button class="btn primary" id="seasonSave">Save theme</button>
+      </div>
     </div>
 
     <div data-pane="team" hidden>
@@ -360,7 +413,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
   </section>
 </main>
 
-<footer>Titan Game and Hobby. May your rolls be high. <a href="#staff">Staff login</a></footer>
+<footer><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#staff">Staff login</a></footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -390,6 +443,40 @@ function setStatus(msg, warn){ const s=$("#status"); if(!msg){s.hidden=true;retu
 // Supabase returns {data, error}. This throws the error so try/catch can handle it.
 const must = ({data, error}) => { if(error) throw error; return data; };
 
+/* ---------- themes ---------- */
+// To add a new seasonal theme, add it here AND add its colors in the CSS (search for CHRISTMAS).
+const SEASONS = {
+  none:      { label:"None (regular look)" },
+  christmas: { label:"Christmas", note:"Happy holidays from everyone at Titan!", snow:true },
+  halloween: { label:"Halloween", note:"Happy Halloween from Titan!" }
+};
+function applyMode(m){
+  document.documentElement.setAttribute("data-mode", m);
+  try{ localStorage.setItem("titan-mode", m); }catch(e){}
+  const b = $("#modeBtn");
+  b.textContent = m === "dark" ? "☀ Light" : "☾ Dark";
+  b.setAttribute("aria-label", m === "dark" ? "Switch to light mode" : "Switch to dark mode");
+}
+function applySeason(s){
+  if(!SEASONS[s]) s = "none";
+  state.season = s;
+  document.documentElement.setAttribute("data-season", s);
+  try{ localStorage.setItem("titan-season", s); }catch(e){}
+  $("#season-fx").innerHTML = SEASONS[s].snow ? Array.from({length:40}, () => {
+    const size = (2 + Math.random()*4).toFixed(1);
+    return `<i style="left:${(Math.random()*100).toFixed(1)}%;width:${size}px;height:${size}px;opacity:${(0.4+Math.random()*0.5).toFixed(2)};animation-duration:${(9+Math.random()*10).toFixed(1)}s;animation-delay:-${(Math.random()*19).toFixed(1)}s;--dx:${Math.round(Math.random()*80-40)}px"></i>`;
+  }).join("") : "";
+  $("#seasonNote").textContent = SEASONS[s].note || "";
+  $("#seasonSel").value = s;
+}
+async function loadSettings(){
+  const { data, error } = await sb.from("site_settings").select("season").eq("id", 1).maybeSingle();
+  if(!error && data) applySeason(data.season);
+}
+$("#seasonSel").innerHTML = Object.entries(SEASONS).map(([k,v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
+applyMode(document.documentElement.getAttribute("data-mode") === "light" ? "light" : "dark");
+applySeason(document.documentElement.getAttribute("data-season") || "none");
+
 /* ---------- routing ---------- */
 const VIEWS = ["home","shop","events","news","staff"];
 function route(){
@@ -403,6 +490,7 @@ function route(){
   $("#loginArea").hidden = !!state.user;
   $("#pendingArea").hidden = !state.user || state.isStaff;
   $("#teamChip").hidden = !state.isOwner;
+  $("#lookChip").hidden = !state.isOwner;
   $("#csvPanel").hidden = !state.isOwner;
   window.scrollTo(0,0);
 }
@@ -432,7 +520,7 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase keys at the top of the script to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings()]);
     setStatus("");
   }catch(e){
     console.error(e);
@@ -602,6 +690,7 @@ document.addEventListener("click", async ev => {
     document.querySelectorAll("[data-pane]").forEach(p=>p.hidden = p.dataset.pane!==t.dataset.staff);
     return;
   }
+  if(t.id==="modeBtn"){ applyMode(document.documentElement.getAttribute("data-mode")==="dark" ? "light" : "dark"); return; }
   if(!sb) return;
   try{
     if(t.id==="loginBtn"){
@@ -618,6 +707,11 @@ document.addEventListener("click", async ev => {
       if(!data.session){ $("#loginMsg").textContent = "Check your email to confirm your account, then come back and log in."; return; }
       must(await sb.from("staff_requests").insert({ user_id:data.user.id, name, email }));
       await refreshStaff(); route();
+    }
+    else if(t.id==="seasonSave"){
+      const v = $("#seasonSel").value;
+      must(await sb.from("site_settings").update({ season:v, updated_at:nowIso() }).eq("id", 1));
+      applySeason(v); toast(`Theme set to ${SEASONS[v].label}`);
     }
     else if(t.id==="requestBtn"){
       const name = $("#reqName").value.trim(); if(!name){ toast("Add your name"); return; }
