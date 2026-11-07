@@ -47,7 +47,8 @@
       <svg class="hero-d20" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="#D9A845" stroke-width="1.5" stroke-linejoin="round"><polygon points="50,4 92,28 92,72 50,96 8,72 8,28"/><polygon points="50,24 76,66 24,66"/><path d="M50 4 50 24M92 28 76 66M92 72 76 66M50 96 76 66M50 96 24 66M8 72 24 66M8 28 24 66M8 28 50 24M92 28 50 24"/></svg>
       <div>
         <h1>Roll in. Play on.</h1>
-        <p class="lead">D&amp;D books and dice, Pokémon and Magic cards, Model kits, Board games, Funko Pops and more. Plus weekly game nights at the store.</p>
+        <p class="lead">D&amp;D books and dice, Pokémon and Magic cards, model kits, board games, Funko Pops and more. Plus weekly game nights at the store.</p>
+        <p class="open-now" id="openNow"></p>
         <div class="shelf" id="homeShelf"></div>
       </div>
       <div class="board">
@@ -103,6 +104,11 @@
     <div id="newsList"></div>
   </section>
 
+  <!-- ONE GAME NIGHT -->
+  <section class="view" id="view-event" hidden>
+    <div id="eventDetail"></div>
+  </section>
+
   <!-- COMMUNITY BOARD -->
   <section class="view" id="view-board" hidden>
     <h1>Community board</h1>
@@ -146,7 +152,15 @@
         <button class="btn primary" id="loginBtn">Log in</button>
         <button class="btn" id="signupBtn">Create account</button>
       </div>
-      <p id="loginMsg" class="note" style="margin-top:10px"></p>
+      <p style="margin:10px 0 0"><button type="button" class="linkish" id="forgotBtn">Forgot your password?</button></p>
+      <p id="loginMsg" class="note" style="margin-top:6px"></p>
+    </div>
+
+    <div id="resetArea" class="panel" style="max-width:460px" hidden>
+      <h3>Set a new password</h3>
+      <div class="field"><label for="newPass">New password</label><input type="password" id="newPass" autocomplete="new-password" minlength="6"></div>
+      <button class="btn primary" id="resetSave">Save new password</button>
+      <p id="resetMsg" class="note" style="margin-top:10px"></p>
     </div>
 
     <div id="meArea" hidden>
@@ -179,16 +193,38 @@
       <button class="chip" data-staff="inventory" aria-pressed="true">Inventory</button>
       <button class="chip" data-staff="events" aria-pressed="false">Game nights</button>
       <button class="chip" data-staff="news" aria-pressed="false">Announcements</button>
+      <button class="chip" data-staff="blocked" aria-pressed="false">Blocked players</button>
       <button class="chip" data-staff="team" aria-pressed="false" id="teamChip" hidden>Team</button>
-      <button class="chip" data-staff="look" aria-pressed="false" id="lookChip" hidden>Seasonal theme</button>
+      <button class="chip" data-staff="look" aria-pressed="false" id="lookChip" hidden>Site settings</button>
     </div>
 
     <div data-pane="look" hidden>
+      <div class="panel" style="max-width:640px">
+        <h3>Store info</h3>
+        <p class="note">Shows in the footer on every page and in the "open now" line on the homepage.</p>
+        <div class="field"><label for="siAddress">Address</label><input type="text" id="siAddress" maxlength="200"></div>
+        <div class="field"><label for="siPhone">Phone</label><input type="text" id="siPhone" maxlength="40"></div>
+        <label style="margin-top:6px">Weekly hours</label>
+        <div class="table-wrap"><table class="hours-edit">
+          <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed all day</th></tr></thead>
+          <tbody id="siHours"></tbody>
+        </table></div>
+        <div class="field" style="margin-top:12px"><label for="siNote">Special hours note</label><input type="text" id="siNote" maxlength="160" placeholder="Closed Thanksgiving. Open late Friday for the prerelease."></div>
+        <button class="btn primary" id="siSave">Save store info</button>
+      </div>
       <div class="panel" style="max-width:520px">
         <h3>Seasonal theme</h3>
         <p class="note">Changes the colors for every visitor in both light and dark mode. Christmas adds falling snow. Visitors still pick light or dark for themselves.</p>
         <div class="field"><label for="seasonSel">Theme</label><select id="seasonSel"></select></div>
         <button class="btn primary" id="seasonSave">Save theme</button>
+      </div>
+    </div>
+
+    <div data-pane="blocked" hidden>
+      <div class="panel" style="max-width:720px">
+        <h3>Blocked players</h3>
+        <p class="note">Blocked players can still read the site, but can't post or reply on the community board or sign up for game nights with their account. Block someone from their community post or from a game night roster.</p>
+        <div id="blockedList"></div>
       </div>
     </div>
 
@@ -222,7 +258,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
         <div id="csvPreview" class="note" style="margin-top:8px"></div>
       </div>
       <div class="panel">
-        <h3>Add one item</h3>
+        <h3 id="niHeading">Add one item</h3>
         <div class="grid3">
           <div class="field"><label for="niSku">SKU</label><input type="text" id="niSku"></div>
           <div class="field" style="grid-column:span 2"><label for="niName">Name</label><input type="text" id="niName"></div>
@@ -234,7 +270,10 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
       </div>
       <div class="panel">
         <h3>Stock on hand</h3>
-        <input type="search" id="invSearch" placeholder="Filter" aria-label="Filter inventory" style="max-width:280px;margin-bottom:10px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <input type="search" id="invSearch" placeholder="Filter" aria-label="Filter inventory" style="max-width:280px">
+          <button class="btn small" id="csvDownload">Download as CSV</button>
+        </div>
         <div class="table-wrap"><table class="stack">
           <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th class="num">Price</th><th class="num">Qty</th><th></th></tr></thead>
           <tbody id="invTable"></tbody>
@@ -244,7 +283,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
 
     <div data-pane="events" hidden>
       <div class="panel">
-        <h3>Add a game night</h3>
+        <h3 id="neHeading">Add a game night</h3>
         <div class="grid2">
           <div class="field"><label for="neTitle">Title</label><input type="text" id="neTitle" placeholder="Friday Night Magic"></div>
           <div class="field"><label for="neGame">Type</label><select id="neGame"><option value="tcg">Trading card game</option><option value="dnd">D&amp;D</option></select></div>
@@ -256,7 +295,12 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
         </div>
         <div class="grid2">
           <div class="field"><label for="neFee">Entry fee</label><input type="text" id="neFee" placeholder="$5 or Free"></div>
-          <div class="field"><label for="neNotes">Details</label><input type="text" id="neNotes" placeholder="Format, level, what to bring"></div>
+          <div class="field"><label for="neNotes">Short note</label><input type="text" id="neNotes" placeholder="Commander pods, level 3 characters"></div>
+        </div>
+        <div class="field"><label for="neDesc">Description</label><textarea id="neDesc" rows="4" maxlength="2000" placeholder="Format and rules, what to bring, the campaign setting, anything players should know"></textarea></div>
+        <div id="neRepeatRow" class="field" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;gap:6px;align-items:center;margin:0;color:var(--ink)"><input type="checkbox" id="neRepeat"> Repeat every week</label>
+          <span id="neWeeksWrap" hidden>for <input type="number" id="neWeeks" min="2" max="12" value="4" style="width:70px;display:inline-block"> weeks</span>
         </div>
         <button class="btn primary" id="neAdd">Add game night</button>
       </div>
@@ -268,7 +312,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
 
     <div data-pane="news" hidden>
       <div class="panel">
-        <h3>Post an announcement</h3>
+        <h3 id="naHeading">Post an announcement</h3>
         <div class="field"><label for="naTitle">Title</label><input type="text" id="naTitle"></div>
         <div class="field"><label for="naBody">Message</label><textarea id="naBody" rows="4"></textarea></div>
         <label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="naPin"> Pin to top</label>
@@ -281,7 +325,22 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
   </section>
 </main>
 
-<footer><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#account">Staff login</a></footer>
+<footer>
+  <div class="foot-grid">
+    <div>
+      <h4>Visit the store</h4>
+      <p id="fAddr"></p>
+      <p><a id="fDir" target="_blank" rel="noopener">Get directions</a></p>
+      <p><a id="fPhone"></a></p>
+    </div>
+    <div>
+      <h4>Hours</h4>
+      <table class="foot-hours"><tbody id="fHours"></tbody></table>
+      <p id="fNote" class="foot-note" hidden></p>
+    </div>
+  </div>
+  <p class="foot-line"><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#account">Staff login</a></p>
+</footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="config.js"></script>

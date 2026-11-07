@@ -6,7 +6,7 @@ const CATS = {
   dnd:{label:"D&D & RPGs"}, tcg:{label:"Trading cards"}, models:{label:"Model kits"},
   board:{label:"Board games"}, collectibles:{label:"Funko & collectibles"}, accessories:{label:"Dice, sleeves & supplies"}
 };
-const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], posts:[], replies:[], bKind:"all", editing:null, request:null, team:[], requests:[], shopCat:"all" };
+const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], posts:[], replies:[], bKind:"all", editing:null, request:null, team:[], requests:[], shopCat:"all", editEvent:null, editNews:null, blocked:[], amBlocked:false, recovery:false, store:null };
 const configured = !SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
 const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
@@ -49,20 +49,85 @@ function applySeason(s){
   $("#seasonSel").value = s;
 }
 async function loadSettings(){
-  const { data, error } = await sb.from("site_settings").select("season").eq("id", 1).maybeSingle();
-  if(!error && data) applySeason(data.season);
+  const { data, error } = await sb.from("site_settings").select("*").eq("id", 1).maybeSingle();
+  if(!error && data){
+    applySeason(data.season);
+    if(data.address || data.hours){
+      state.store = { address:data.address || DEFAULT_STORE.address, phone:data.phone || "", hours:data.hours || DEFAULT_STORE.hours, note:data.hours_note || "" };
+      renderStore();
+    }
+  }
 }
+
+/* ---------- store info: address, phone, hours ---------- */
+const DAYS = [["sun","Sunday"],["mon","Monday"],["tue","Tuesday"],["wed","Wednesday"],["thu","Thursday"],["fri","Friday"],["sat","Saturday"]];
+const STORE_TZ = "America/Indiana/Indianapolis";   // Bedford, IN is on Eastern time
+const DEFAULT_STORE = {
+  address:"2821 Washington Ave, Bedford, IN 47421",
+  phone:"(812) 329-1112",
+  hours:{ sun:{open:"12:00",close:"17:00"}, mon:{open:"12:00",close:"18:00"}, tue:{open:"12:00",close:"18:00"}, wed:{open:"12:00",close:"18:00"},
+          thu:{open:"12:00",close:"19:00"}, fri:{open:"12:00",close:"20:00"}, sat:{open:"12:00",close:"19:00"} },
+  note:""
+};
+state.store = DEFAULT_STORE;
+const niceTime = t => { if(!t) return ""; const [h,m] = t.split(":").map(Number); if(h===12 && m===0) return "noon"; const d = new Date(); d.setHours(h,m); return d.toLocaleTimeString("en-US",{hour:"numeric",minute: m ? "2-digit" : undefined}); };
+const dayHours = h => (!h || h.closed || !h.open || !h.close) ? "Closed" : `${cap(niceTime(h.open))} to ${niceTime(h.close)}`;
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function storeNow(){
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US",{ timeZone:STORE_TZ, weekday:"short", hour:"2-digit", minute:"2-digit", hourCycle:"h23" }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  const idx = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(parts.weekday);
+  return { idx, mins: parseInt(parts.hour,10)*60 + parseInt(parts.minute,10) };
+}
+const toMins = t => { const [h,m] = t.split(":").map(Number); return h*60 + m; };
+function openStatus(hours){
+  const { idx, mins } = storeNow();
+  const today = hours[DAYS[idx][0]];
+  if(today && !today.closed && today.open && today.close && mins >= toMins(today.open) && mins < toMins(today.close))
+    return { open:true, text:`Open now until ${niceTime(today.close)}` };
+  if(today && !today.closed && today.open && mins < toMins(today.open)) return { open:false, text:`Closed now. Opens today at ${niceTime(today.open)}` };
+  for(let i = 1; i <= 7; i++){
+    const [key, name] = DAYS[(idx + i) % 7], h = hours[key];
+    if(h && !h.closed && h.open) return { open:false, text:`Closed now. Opens ${i===1 ? "tomorrow" : name} at ${niceTime(h.open)}` };
+  }
+  return { open:false, text:"Closed" };
+}
+function renderStore(){
+  const st = state.store, { idx } = storeNow();
+  $("#fAddr").textContent = st.address;
+  $("#fDir").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(st.address);
+  $("#fPhone").textContent = st.phone; $("#fPhone").href = "tel:" + st.phone.replace(/[^0-9+]/g,"");
+  $("#fPhone").hidden = !st.phone;
+  $("#fHours").innerHTML = [1,2,3,4,5,6,0].map(i => { const [k,name] = DAYS[i];
+    return `<tr class="${i===idx?"today":""}"><td>${name}</td><td>${esc(dayHours(st.hours[k]))}</td></tr>`; }).join("");
+  $("#fNote").textContent = st.note; $("#fNote").hidden = !st.note;
+  const os = openStatus(st.hours);
+  $("#openNow").innerHTML = `<span class="dot ${os.open?"on":""}"></span>${esc(os.text)}${st.note ? ` <span class="open-note">${esc(st.note)}</span>` : ""}`;
+}
+function renderStoreForm(){
+  const st = state.store;
+  $("#siAddress").value = st.address; $("#siPhone").value = st.phone; $("#siNote").value = st.note;
+  $("#siHours").innerHTML = [1,2,3,4,5,6,0].map(i => { const [k,name] = DAYS[i], h = st.hours[k] || {};
+    return `<tr><td data-label="Day">${name}</td>
+      <td data-label="Opens"><input type="time" data-h-open="${k}" value="${esc(h.open||"")}" aria-label="${name} opens"></td>
+      <td data-label="Closes"><input type="time" data-h-close="${k}" value="${esc(h.close||"")}" aria-label="${name} closes"></td>
+      <td data-label="Closed"><input type="checkbox" data-h-closed="${k}" ${h.closed?"checked":""} aria-label="${name} closed all day"></td></tr>`; }).join("");
+}
+renderStore();
+setInterval(renderStore, 60000);
 $("#seasonSel").innerHTML = Object.entries(SEASONS).map(([k,v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
 applyMode(document.documentElement.getAttribute("data-mode") === "light" ? "light" : "dark");
 applySeason(document.documentElement.getAttribute("data-season") || "none");
 
 /* ---------- routing ---------- */
-const VIEWS = ["home","shop","events","news","board","account","staff"];
+const VIEWS = ["home","shop","events","event","news","board","account","staff"];
 function closeMenu(){ document.querySelector("header.top").classList.remove("open"); $("#menuBtn").setAttribute("aria-expanded","false"); }
 function route(){
   closeMenu();
   let v = (location.hash||"").replace("#","") || "home";
+  state.detailId = null;
+  if(v.startsWith("event-")){ state.detailId = v.slice(6); v = "event"; }
   if(!VIEWS.includes(v)) v = "home";
+  state.view = v;
   if(v==="staff" && !state.isStaff) v = "account";
   VIEWS.forEach(n => { $("#view-"+n).hidden = n!==v; });
   document.querySelectorAll("nav.tabs a").forEach(a => {
@@ -70,13 +135,17 @@ function route(){
   });
   $("#staffArea").hidden = !state.isStaff;
   $("#authArea").hidden = !!state.user;
-  $("#meArea").hidden = !state.user;
+  $("#meArea").hidden = !state.user || state.recovery;
+  $("#resetArea").hidden = !state.recovery;
   $("#accountLink").textContent = state.user ? "My account" : "Log in";
   if(v==="account") document.querySelector('nav.tabs a[href="#account"]').setAttribute("aria-current","page");
+  if(v==="event"){ document.querySelector('nav.tabs a[href="#events"]').setAttribute("aria-current","page"); showEventDetail(); }
   $("#teamChip").hidden = !state.isOwner;
   $("#lookChip").hidden = !state.isOwner;
   $("#csvPanel").hidden = !state.isOwner;
-  window.scrollTo(0,0);
+      // Only jump to the top when the page actually changes, not when data refreshes.
+     const here = location.hash || "#home";
+     if(state.lastHash !== here){ state.lastHash = here; window.scrollTo(0,0); }
 }
 window.addEventListener("hashchange", route);
 
@@ -93,6 +162,25 @@ async function loadCounts(){
   const rows = must(await sb.rpc("signup_counts"));
   state.counts = Object.fromEntries((rows||[]).map(r => [r.event_id, Number(r.taken)]));
 }
+async function loadBlocked(){
+  state.amBlocked = false; state.blocked = [];
+  if(!state.user) return;
+  if(state.isStaff){
+    state.blocked = must(await sb.from("blocked_users").select("*").order("created_at", { ascending:false }));
+  } else {
+    const { data } = await sb.from("blocked_users").select("user_id").eq("user_id", state.user.id).maybeSingle();
+    state.amBlocked = !!data;
+  }
+}
+function renderBlocked(){
+  if(!state.isStaff) return;
+  $("#blockedList").innerHTML = state.blocked.length ? state.blocked.map(b => `
+    <div class="mine-row"><div><strong>${esc(b.name || "Player")}</strong>${b.reason ? `<div class="note">${esc(b.reason)}</div>` : ""}
+      <div class="note">Blocked ${esc(timeAgo(b.created_at))}</div></div>
+      <button class="btn small" data-unblock="${esc(b.user_id)}">Unblock</button></div>`).join("") : `<p class="note">No one is blocked.</p>`;
+}
+const blockBtn = (uid, name) => (state.isStaff && uid && uid !== state.user?.id)
+  ? `<button class="btn small danger" data-block-user="${esc(uid)}" data-block-name="${esc(name)}">Block</button>` : "";
 async function loadRoster(){
   if(!state.isStaff){ state.roster = []; return; }
   state.roster = must(await sb.from("signups").select("*").order("created_at"));
@@ -104,8 +192,9 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase key in config.js to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadBoard()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadBoard(), loadBlocked()]);
     setStatus("");
+    state.loaded = true;
   }catch(e){
     console.error(e);
     setStatus("Couldn't load store data. Check your Supabase keys and that you ran the SQL file.", true);
@@ -229,35 +318,117 @@ function renderShop(){
     `<div class="empty" style="grid-column:1/-1">${state.inventory.length ? "Nothing matches that search." : "The store's inventory hasn't been uploaded yet."}</div>`;
 }
 
+function eventEditForm(e){
+  return `<div class="ev-card ${e.game} editing">
+    <h3 style="margin:0 0 12px">Editing game night</h3>
+    <div class="grid2">
+      <div class="field"><label for="ee-title">Title</label><input type="text" id="ee-title" value="${esc(e.title)}"></div>
+      <div class="field"><label for="ee-game">Type</label><select id="ee-game"><option value="tcg" ${e.game==="tcg"?"selected":""}>Trading card game</option><option value="dnd" ${e.game==="dnd"?"selected":""}>D&amp;D</option></select></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label for="ee-date">Date</label><input type="date" id="ee-date" value="${esc(e.date)}"></div>
+      <div class="field"><label for="ee-time">Start time</label><input type="time" id="ee-time" value="${esc(e.time)}"></div>
+      <div class="field"><label for="ee-seats">Seats</label><input type="number" id="ee-seats" min="1" value="${e.seats}"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="ee-fee">Entry fee</label><input type="text" id="ee-fee" value="${esc(e.fee||"")}"></div>
+      <div class="field"><label for="ee-notes">Short note</label><input type="text" id="ee-notes" value="${esc(e.notes||"")}"></div>
+    </div>
+    <div class="field"><label for="ee-desc">Description</label><textarea id="ee-desc" rows="4" maxlength="2000">${esc(e.description||"")}</textarea></div>
+    <div class="bactions"><button class="btn small primary" data-save-event="${esc(e.id)}">Save</button><button class="btn small" data-cancel-event="1">Cancel</button></div>
+  </div>`;
+}
 function eventCard(e, staff){
+  if(staff && state.editEvent === e.id) return eventEditForm(e);
   const n = taken(e.id), full = n >= e.seats;
   const pct = Math.min(100, Math.round(n/e.seats*100));
   let html = `<div class="ev-card ${e.game}">
     <div class="when">${esc(fmtDate(e.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime(e.time))}</div>
-    <h3 style="margin:2px 0 0">${esc(e.title)}</h3>
+    <h3 style="margin:2px 0 0"><a class="ev-link" href="#event-${esc(e.id)}">${esc(e.title)}</a></h3>
     <div class="meta"><span>${esc(e.fee||"Free")}</span>${e.notes?`<span>${esc(e.notes)}</span>`:""}</div>
     <div class="seats ${full?"full":""}">${n} of ${e.seats} seats taken</div>
     <div class="bar"><i style="width:${pct}%"></i></div>`;
   if(staff){
-    const r = rosterFor(e.id);
-    html += r.length ? `<ol class="roster">${r.map(x=>`<li>${esc(x.name)}${x.contact?` <span class="muted">(${esc(x.contact)})</span>`:""} <button class="btn small danger" data-del-signup="${esc(x.id)}">Remove</button></li>`).join("")}</ol>` : `<p class="note" style="margin-top:8px">No sign-ups yet.</p>`;
-    if(state.isOwner) html += `<button class="btn small danger" data-del-event="${esc(e.id)}" style="margin-top:8px">Delete game night</button>`;
-  } else if(state.mine.find(m => m.event_id === e.id)){
+    const r = rosterFor(e.id), came = r.filter(x => x.attended).length;
+    html += r.length ? `<p class="note" style="margin:10px 0 4px">Check off who showed up. ${came} of ${r.length} here.</p>
+      <ol class="roster">${r.map(x=>`<li><label class="attend"><input type="checkbox" data-attend="${esc(x.id)}" ${x.attended?"checked":""} aria-label="${esc(x.name)} showed up"> ${esc(x.name)}</label>${x.contact?` <span class="muted">(${esc(x.contact)})</span>`:""}
+        <span class="roster-btns"><button class="btn small danger" data-del-signup="${esc(x.id)}">Remove</button>${blockBtn(x.user_id, x.name)}</span></li>`).join("")}</ol>` : `<p class="note" style="margin-top:8px">No sign-ups yet.</p>`;
+    html += `<div class="bactions">
+      <button class="btn small" data-edit-event="${esc(e.id)}">Edit</button>
+      <button class="btn small" data-print="${esc(e.id)}">Print sign-in sheet</button>
+      ${state.isOwner ? `<button class="btn small danger" data-del-event="${esc(e.id)}">Delete game night</button>` : ""}</div>`;
+    html += `<a class="details-link" href="#event-${esc(e.id)}">Details &amp; players →</a>`;
+  } else {
+    html += signupControls(e, full) + `<a class="details-link" href="#event-${esc(e.id)}">Details &amp; players →</a>`;
+  }
+  return html + `</div>`;
+}
+
+// The sign-up part of a game night, used on the list and on the details page.
+function signupControls(e, full){
+  let html = "";
+  if(state.mine.find(m => m.event_id === e.id)){
     const m = state.mine.find(x => x.event_id === e.id);
     html += `<p class="signed">✓ You're signed up</p><button class="btn small" data-cancel="${esc(m.id)}">Cancel my seat</button>`;
+  } else if(state.user && state.amBlocked){
+    html += `<p class="note" style="margin-top:10px">Your account can't sign up online right now. Please talk to the store.</p>`;
   } else if(!full && state.user){
-    html += `<p style="margin:10px 0 0"><button class="btn primary" data-join="${esc(e.id)}">Save my seat as ${esc(myName())}</button></p>`;
+    html += `<p style="margin:10px 0 0"><button class="btn primary" data-join="${esc(e.id)}">Save my seat as ${esc(myName())}</button></p>
+      <p class="note" style="margin:6px 0 0">Your name will show on the player list.</p>`;
   } else if(!full){
     html += `<form class="signup-form" data-signup="${esc(e.id)}">
       <input type="text" name="name" placeholder="Your name" required maxlength="60" aria-label="Your name">
       <input type="text" name="contact" placeholder="Phone or email (optional)" maxlength="80" aria-label="Phone or email">
       <button class="btn primary" type="submit">Save my seat</button></form>
-      <p class="note" style="margin:6px 0 0"><a href="#account">Log in</a> for one-click sign-ups.</p>`;
+      <p class="note" style="margin:6px 0 0">Your name will show on the player list. <a href="#account">Log in</a> for one-click sign-ups.</p>`;
   } else {
     html += `<p class="note" style="margin-top:8px">This night is full. Ask at the counter about the waitlist.</p>`;
   }
-  return html + `</div>`;
+  return html;
 }
+
+/* ---------- one game night's page ---------- */
+async function loadPlayers(id){
+  if(!sb || !id){ state.players = { id, list:[] }; return; }
+  const rows = must(await sb.rpc("event_players", { eid:id }));
+  state.players = { id, list:rows || [] };
+}
+async function showEventDetail(){
+  const id = state.detailId;
+  if(!state.players || state.players.id !== id) state.players = { id, list:null };
+  renderEventDetail();
+  try{ await loadPlayers(id); }catch(e){ console.error(e); state.players = { id, list:[] }; }
+  if(state.detailId === id) renderEventDetail();
+}
+function renderEventDetail(){
+  if(state.view !== "event") return;
+  const e = state.events.find(x => x.id === state.detailId);
+  const back = `<p style="margin:0 0 14px"><a href="#events">← All game nights</a></p>`;
+  if(!e){
+    $("#eventDetail").innerHTML = back + `<div class="empty">${state.loaded ? "This game night isn't on the schedule anymore." : "Loading..."}</div>`;
+    return;
+  }
+  const n = taken(e.id), full = n >= e.seats, pct = Math.min(100, Math.round(n/e.seats*100));
+  const list = state.players && state.players.id === e.id ? state.players.list : null;
+  $("#eventDetail").innerHTML = back + `
+    <div class="ev-card ev-detail ${e.game}">
+      <span class="game-tag ${e.game}">${e.game==="dnd"?"D&D":"TCG"}</span>
+      <h1 class="ev-title">${esc(e.title)}</h1>
+      <div class="when">${esc(fmtDate(e.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime(e.time))}</div>
+      <div class="meta"><span>${esc(e.fee||"Free")}</span>${e.notes?`<span>${esc(e.notes)}</span>`:""}</div>
+      ${e.description ? `<div class="desc">${esc(e.description)}</div>` : ""}
+      <div class="seats ${full?"full":""}">${n} of ${e.seats} seats taken</div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      ${signupControls(e, full)}
+    </div>
+    <div class="panel" style="max-width:820px">
+      <h3>Who's playing${list ? ` (${list.length})` : ""}</h3>
+      ${list === null ? `<p class="note">Loading...</p>` : list.length
+        ? `<ol class="players">${list.map(p => `<li>${esc(p.name)}${p.is_me ? ' <span class="note">(you)</span>' : ""}</li>`).join("")}</ol>`
+        : `<p class="note">Nobody yet. Be the first to sign up!</p>`}
+    </div>`;
+}
+async function refreshDetail(){ if(state.view === "event" && state.detailId){ try{ await loadPlayers(state.detailId); }catch(e){ console.error(e); } } }
 
 function renderEvents(){
   const tcg = state.events.filter(e=>e.game==="tcg"), dnd = state.events.filter(e=>e.game==="dnd");
@@ -267,9 +438,16 @@ function renderEvents(){
 
 function sortedNews(){ return [...state.news].sort((a,b)=> (b.pinned?1:0)-(a.pinned?1:0) || b.createdAt-a.createdAt); }
 function postHtml(p, staff){
+  if(staff && state.editNews === p.id) return `<article class="post editing">
+    <h3 style="margin:0 0 12px">Editing announcement</h3>
+    <div class="field"><label for="en-title">Title</label><input type="text" id="en-title" value="${esc(p.title)}"></div>
+    <div class="field"><label for="en-body">Message</label><textarea id="en-body" rows="4">${esc(p.body)}</textarea></div>
+    <label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="en-pin" ${p.pinned?"checked":""}> Pin to top</label>
+    <div class="bactions"><button class="btn small primary" data-save-news="${esc(p.id)}">Save</button><button class="btn small" data-cancel-news="1">Cancel</button></div>
+  </article>`;
   return `<article class="post ${p.pinned?"pinned":""}"><div class="when">${p.pinned?"Pinned. ":""}${new Date(p.createdAt).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}</div>
     <h3>${esc(p.title)}</h3><div class="body">${esc(p.body)}</div>
-    ${staff?`<div style="margin-top:10px;display:flex;gap:8px"><button class="btn small" data-pin="${esc(p.id)}">${p.pinned?"Unpin":"Pin"}</button>${state.isOwner?`<button class="btn small danger" data-del-news="${esc(p.id)}">Delete</button>`:""}</div>`:""}</article>`;
+    ${staff?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" data-edit-news="${esc(p.id)}">Edit</button><button class="btn small" data-pin="${esc(p.id)}">${p.pinned?"Unpin":"Pin"}</button>${state.isOwner?`<button class="btn small danger" data-del-news="${esc(p.id)}">Delete</button>`:""}</div>`:""}</article>`;
 }
 function renderNews(){
   const list = sortedNews();
@@ -280,8 +458,10 @@ function renderInventoryTable(){
   const q = $("#invSearch").value.trim().toLowerCase();
   const list = state.inventory.filter(i => !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q))
     .sort((a,b)=>a.name.localeCompare(b.name));
-  $("#invTable").innerHTML = list.length ? list.map(i => `<tr><td data-label="SKU">${esc(i.sku)}</td><td data-label="Name">${esc(i.name)}</td><td data-label="Category">${esc(CATS[i.category]?.label||i.category)}</td>
-    <td class="num" data-label="Price">${money(i.price)}</td><td class="num" data-label="Qty"><input type="number" min="0" value="${i.qty}" data-qty="${esc(i.sku)}" aria-label="Quantity for ${esc(i.name)}"></td>
+  $("#invTable").innerHTML = list.length ? list.map(i => `<tr><td data-label="SKU">${esc(i.sku)}</td>
+    <td data-label="Name"><input type="text" class="inline-in name-in" maxlength="120" value="${esc(i.name)}" data-field="name" data-sku="${esc(i.sku)}" aria-label="Name for ${esc(i.sku)}"></td>
+    <td data-label="Category"><select class="inline-in" data-field="category" data-sku="${esc(i.sku)}" aria-label="Category for ${esc(i.name)}">${Object.entries(CATS).map(([k,c]) => `<option value="${k}" ${i.category===k?"selected":""}>${esc(c.label)}</option>`).join("")}</select></td>
+    <td class="num" data-label="Price"><input type="number" class="inline-in price-in" min="0" step="0.01" value="${Number(i.price).toFixed(2)}" data-field="price" data-sku="${esc(i.sku)}" aria-label="Price for ${esc(i.name)}"></td><td class="num" data-label="Qty"><input type="number" class="inline-in qty-in" min="0" value="${i.qty}" data-qty="${esc(i.sku)}" aria-label="Quantity for ${esc(i.name)}"></td>
     <td class="act">${state.isOwner?`<button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button>`:""}</td></tr>`).join("") :
     `<tr><td colspan="6" class="muted">No items yet. Upload a CSV or add one above.</td></tr>`;
 }
@@ -291,8 +471,8 @@ function renderStaffEvents(){
 function renderStaffNews(){ $("#staffNews").innerHTML = sortedNews().map(p=>postHtml(p,true)).join(""); }
 
 function renderAll(){
-  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard();
-  if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); }
+  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderEventDetail();
+  if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); renderBlocked(); }
 }
 
 /* ---------- community board ---------- */
@@ -315,7 +495,9 @@ async function loadBoard(){
 }
 function renderBoard(){
   $("#boardLogin").hidden = !!state.user;
-  $("#boardNew").hidden = !state.user;
+  $("#boardNew").hidden = !state.user || state.amBlocked;
+  $("#boardLogin").innerHTML = state.amBlocked ? `<p style="margin:0">Your account can't post on the community board right now. Please talk to the store.</p>` : `<p style="margin:0"><a href="#account">Log in or make an account</a> to post or reply.</p>`;
+  $("#boardLogin").hidden = !!state.user && !state.amBlocked;
   $("#boardKinds").innerHTML = [["all","All posts"], ...Object.entries(KINDS)]
     .map(([k,l]) => `<button class="chip" data-bkind="${k}" aria-pressed="${state.bKind===k}">${esc(l)}</button>`).join("");
   const game = $("#bGame").value || "all", showClosed = $("#bClosed").checked;
@@ -347,12 +529,12 @@ function postCard(p){
     ${canRemove ? `<div class="bactions">
       ${mine ? `<button class="btn small" data-edit="${esc(p.id)}">Edit</button>
       <button class="btn small" data-status="${esc(p.id)}" data-to="${p.status==="open"?"closed":"open"}">${p.status==="open" ? (p.kind==="talk" ? "Close" : "Found them, close post") : "Reopen"}</button>` : ""}
-      <button class="btn small danger" data-del-post="${esc(p.id)}">${mine ? "Delete" : "Remove (staff)"}</button></div>` : ""}
+      <button class="btn small danger" data-del-post="${esc(p.id)}">${mine ? "Delete" : "Remove (staff)"}</button>${mine ? "" : blockBtn(p.user_id, p.author_name)}</div>` : ""}
     <details class="replies" ${reps.length && reps.length <= 3 ? "open" : ""}>
       <summary>${reps.length ? `${reps.length} repl${reps.length===1?"y":"ies"}` : "Reply"}</summary>
       ${reps.map(r => `<div class="reply"><div class="byline">${esc(r.author_name)}, ${esc(timeAgo(r.created_at))}</div><div class="body">${esc(r.body)}</div>
-        ${(state.user && r.user_id===state.user.id) || state.isStaff ? `<button class="btn small danger" data-del-reply="${esc(r.id)}" style="margin-top:4px">${state.user && r.user_id===state.user.id ? "Delete" : "Remove (staff)"}</button>` : ""}</div>`).join("")}
-      ${state.user ? (p.status==="open" ? `<div class="reply-form"><textarea id="reply-${esc(p.id)}" rows="2" maxlength="1000" placeholder="Write a reply" aria-label="Write a reply"></textarea><button class="btn small primary" data-reply="${esc(p.id)}">Reply</button></div>` : `<p class="note">This post is closed.</p>`)
+        ${(state.user && r.user_id===state.user.id) || state.isStaff ? `<button class="btn small danger" data-del-reply="${esc(r.id)}" style="margin-top:4px">${state.user && r.user_id===state.user.id ? "Delete" : "Remove (staff)"}</button>` : ""}${state.user && r.user_id===state.user.id ? "" : blockBtn(r.user_id, r.author_name)}</div>`).join("")}
+      ${state.user && !state.amBlocked ? (p.status==="open" ? `<div class="reply-form"><textarea id="reply-${esc(p.id)}" rows="2" maxlength="1000" placeholder="Write a reply" aria-label="Write a reply"></textarea><button class="btn small primary" data-reply="${esc(p.id)}">Reply</button></div>` : `<p class="note">This post is closed.</p>`)
         : `<p class="note"><a href="#account">Log in</a> to reply.</p>`}
     </details>
   </article>`;
@@ -370,6 +552,7 @@ document.addEventListener("click", async ev => {
   if(t.dataset.bkind){ state.bKind = t.dataset.bkind; renderBoard(); return; }
   if(t.dataset.edit){ state.editing = t.dataset.edit; renderBoard(); return; }
   if(t.dataset.editCancel){ state.editing = null; renderBoard(); return; }
+  if(t.dataset.staff === "look") renderStoreForm();
   if(t.dataset.staff){
     document.querySelectorAll("[data-staff]").forEach(b=>b.setAttribute("aria-pressed", b===t));
     document.querySelectorAll("[data-pane]").forEach(p=>p.hidden = p.dataset.pane!==t.dataset.staff);
@@ -442,13 +625,71 @@ document.addEventListener("click", async ev => {
         const msg = String(e.message||"");
         toast(msg.includes("full") ? "That night just filled up" : msg.includes("duplicate") ? "You're already signed up" : "Sign-up didn't go through. Try again.");
       }
-      await Promise.all([loadMine(), loadCounts()]); renderAll();
+      await Promise.all([loadMine(), loadCounts(), refreshDetail()]); renderAll();
     }
     else if(t.dataset.cancel){
       if(confirm("Cancel your seat for this game night?")){
         must(await sb.from("signups").delete().eq("id", t.dataset.cancel));
-        await Promise.all([loadMine(), loadCounts(), loadRoster()]); renderAll(); toast("Your seat is cancelled");
+        await Promise.all([loadMine(), loadCounts(), loadRoster(), refreshDetail()]); renderAll(); toast("Your seat is cancelled");
       }
+    }
+    else if(t.id==="siSave"){
+      const hours = {};
+      DAYS.forEach(([k]) => { hours[k] = { open:document.querySelector(`[data-h-open="${k}"]`).value, close:document.querySelector(`[data-h-close="${k}"]`).value, closed:document.querySelector(`[data-h-closed="${k}"]`).checked }; });
+      const row = { address:$("#siAddress").value.trim(), phone:$("#siPhone").value.trim(), hours, hours_note:$("#siNote").value.trim() || null, updated_at:nowIso() };
+      must(await sb.from("site_settings").update(row).eq("id", 1));
+      state.store = { address:row.address, phone:row.phone, hours, note:row.hours_note || "" };
+      renderStore(); toast("Store info saved");
+    }
+    else if(t.id==="forgotBtn"){
+      const email = $("#loginEmail").value.trim();
+      if(!email){ $("#loginMsg").textContent = "Type your email above first, then click Forgot your password."; return; }
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      $("#loginMsg").textContent = error ? error.message : "If that email has an account, a reset link is on its way. Check your spam folder too.";
+    }
+    else if(t.id==="resetSave"){
+      const pw = $("#newPass").value;
+      if(pw.length < 6){ $("#resetMsg").textContent = "Use at least 6 characters."; return; }
+      const { error } = await sb.auth.updateUser({ password:pw });
+      if(error){ $("#resetMsg").textContent = error.message; return; }
+      state.recovery = false; $("#newPass").value = ""; route(); toast("Password updated");
+    }
+    else if(t.dataset.blockUser){
+      const reason = prompt(`Block ${t.dataset.blockName}? They won't be able to post, reply, or sign up with their account.\n\nReason (optional, only staff see this):`);
+      if(reason === null) return;
+      must(await sb.from("blocked_users").insert({ user_id:t.dataset.blockUser, name:t.dataset.blockName, reason:reason.trim() || null }));
+      await loadBlocked(); renderAll(); toast(`${t.dataset.blockName} is blocked`);
+    }
+    else if(t.dataset.unblock){
+      if(confirm("Unblock this player?")){ must(await sb.from("blocked_users").delete().eq("user_id", t.dataset.unblock)); await loadBlocked(); renderAll(); toast("Player unblocked"); }
+    }
+    else if(t.id==="csvDownload"){
+      const q = v => { const x = String(v ?? ""); return /[",\n]/.test(x) ? `"${x.replace(/"/g,'""')}"` : x; };
+      const rows = [["sku","name","category","price","qty"], ...[...state.inventory].sort((a,b)=>a.name.localeCompare(b.name)).map(i => [i.sku, i.name, i.category, Number(i.price).toFixed(2), i.qty])];
+      const blob = new Blob(["\uFEFF" + rows.map(r => r.map(q).join(",")).join("\r\n")], { type:"text/csv" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `titan-inventory-${today()}.csv`;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+    else if(t.dataset.print){ printRoster(t.dataset.print); }
+    else if(t.dataset.editEvent){ state.editEvent = t.dataset.editEvent; renderStaffEvents(); document.getElementById("ee-title")?.focus(); }
+    else if(t.dataset.cancelEvent){ state.editEvent = null; renderStaffEvents(); }
+    else if(t.dataset.saveEvent){
+      const id = t.dataset.saveEvent;
+      const row = { title:$("#ee-title").value.trim(), game:$("#ee-game").value, date:$("#ee-date").value, time:$("#ee-time").value,
+        seats:Math.max(1, parseInt($("#ee-seats").value,10)||8), fee:$("#ee-fee").value.trim()||"Free", notes:$("#ee-notes").value.trim(), description:$("#ee-desc").value.trim() || null };
+      if(!row.title || !row.date || !row.time){ toast("Add a title, date and time"); return; }
+      const signed = taken(id);
+      if(row.seats < signed && !confirm(`${signed} people are already signed up, which is more than ${row.seats} seats. Save anyway? Nobody gets removed.`)) return;
+      must(await sb.from("events").update(row).eq("id", id));
+      state.editEvent = null; await Promise.all([loadEvents(), loadCounts()]); renderAll(); toast("Game night updated");
+    }
+    else if(t.dataset.editNews){ state.editNews = t.dataset.editNews; renderStaffNews(); document.getElementById("en-title")?.focus(); }
+    else if(t.dataset.cancelNews){ state.editNews = null; renderStaffNews(); }
+    else if(t.dataset.saveNews){
+      const title = $("#en-title").value.trim(), body = $("#en-body").value.trim();
+      if(!title || !body){ toast("Add a title and a message"); return; }
+      must(await sb.from("announcements").update({ title, body, pinned:$("#en-pin").checked }).eq("id", t.dataset.saveNews));
+      state.editNews = null; await loadNews(); renderAll(); toast("Announcement updated");
     }
     else if(t.id==="seasonSave"){
       const v = $("#seasonSel").value;
@@ -498,7 +739,7 @@ document.addEventListener("submit", async ev => {
   }catch(e){
     toast(String(e.message||"").includes("full") ? "That night just filled up" : "Sign-up didn't go through. Try again.");
   }finally{
-    btn.disabled=false; await loadCounts(); renderAll();
+    btn.disabled=false; await Promise.all([loadCounts(), refreshDetail()]); renderAll();
   }
 });
 
@@ -521,6 +762,22 @@ document.addEventListener("change", async ev => {
     catch(e){ handleError(e); }
     await loadTeam(); renderTeam(); return;
   }
+  if(ev.target.id === "neRepeat"){ $("#neWeeksWrap").hidden = !ev.target.checked; return; }
+  const att = ev.target.closest("[data-attend]");
+  if(att && sb){
+    try{ must(await sb.from("signups").update({ attended:att.checked }).eq("id", att.dataset.attend)); }
+    catch(e){ handleError(e); att.checked = !att.checked; }
+    await loadRoster(); renderStaffEvents(); return;
+  }
+  const fld = ev.target.closest("[data-field]");
+  if(fld && sb){
+    const field = fld.dataset.field; let value = fld.value;
+    if(field === "name"){ value = value.trim(); if(!value){ toast("Name can't be empty"); renderInventoryTable(); return; } }
+    if(field === "price"){ value = Math.max(0, parseFloat(value) || 0); fld.value = value.toFixed(2); }
+    try{ must(await sb.from("products").update({ [field]:value, updated_at:nowIso() }).eq("sku", fld.dataset.sku)); toast("Saved"); }
+    catch(e){ handleError(e); }
+    await loadProducts(); renderHome(); renderShop(); return;
+  }
   const inp = ev.target.closest("[data-qty]"); if(!inp || !sb) return;
   const v = Math.max(0, parseInt(inp.value,10)||0);
   try{ must(await sb.from("products").update({qty:v, updated_at:nowIso()}).eq("sku", inp.dataset.qty)); await loadProducts(); renderHome(); renderShop(); toast("Stock updated"); }
@@ -533,16 +790,25 @@ const skuSafe = s => String(s||"").trim().replace(/[^A-Za-z0-9_\-.]/g,"-").slice
 async function addItem(){
   const sku = skuSafe($("#niSku").value), name=$("#niName").value.trim();
   if(!sku || !name){ toast("Add a SKU and a name"); return; }
-  must(await sb.from("products").upsert({ sku, name, category:$("#niCat").value, price:parseFloat($("#niPrice").value)||0, qty:parseInt($("#niQty").value,10)||0, updated_at:nowIso() }));
+  if(state.inventory.some(i => i.sku === sku) && !confirm(`An item with SKU ${sku} already exists. Replace it?`)) return;
+  must(await sb.from("products").upsert({ sku, name, category:$("#niCat").value, price:parseFloat($("#niPrice").value)||0, qty:Math.max(0, parseInt($("#niQty").value,10)||0), updated_at:nowIso() }));
   ["#niSku","#niName","#niPrice","#niQty"].forEach(s=>$(s).value="");
   await loadProducts(); renderAll(); toast("Item added");
 }
 async function addEvent(){
   const title=$("#neTitle").value.trim(), date=$("#neDate").value, time=$("#neTime").value;
   if(!title || !date || !time){ toast("Add a title, date and time"); return; }
-  must(await sb.from("events").insert({ title, game:$("#neGame").value, date, time, seats:parseInt($("#neSeats").value,10)||8, fee:$("#neFee").value.trim()||"Free", notes:$("#neNotes").value.trim() }));
-  ["#neTitle","#neDate","#neTime","#neFee","#neNotes"].forEach(s=>$(s).value="");
-  await loadEvents(); renderAll(); toast("Game night added");
+  const row = { title, game:$("#neGame").value, date, time, seats:Math.max(1, parseInt($("#neSeats").value,10)||8), fee:$("#neFee").value.trim()||"Free", notes:$("#neNotes").value.trim(), description:$("#neDesc").value.trim() || null };
+  const weeks = $("#neRepeat").checked ? Math.min(12, Math.max(2, parseInt($("#neWeeks").value,10)||4)) : 1;
+  const rows = Array.from({ length:weeks }, (_, w) => {
+    const [y,m,d] = date.split("-").map(Number), dt = new Date(y, m-1, d + 7*w);
+    return { ...row, date:`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}` };
+  });
+  must(await sb.from("events").insert(rows));
+  ["#neTitle","#neDate","#neTime","#neFee","#neNotes","#neDesc"].forEach(s=>$(s).value=""); $("#neSeats").value = 8;
+  $("#neRepeat").checked = false; $("#neWeeksWrap").hidden = true;
+  await loadEvents(); renderAll();
+  toast(weeks > 1 ? `Added ${weeks} weekly game nights. They're in the list below.` : "Game night added");
 }
 async function addNews(){
   const title=$("#naTitle").value.trim(), body=$("#naBody").value.trim();
@@ -550,6 +816,23 @@ async function addNews(){
   must(await sb.from("announcements").insert({ title, body, pinned:$("#naPin").checked }));
   $("#naTitle").value=""; $("#naBody").value=""; $("#naPin").checked=false;
   await loadNews(); renderAll(); toast("Announcement posted");
+}
+
+// Opens a printable sign-in sheet for one game night.
+function printRoster(id){
+  const e = state.events.find(x => x.id === id); if(!e) return;
+  const r = rosterFor(id), blanks = Math.max(0, e.seats - r.length);
+  const w = window.open("", "_blank"); if(!w){ toast("Allow pop-ups to print the sheet"); return; }
+  const rows = r.map((x,i) => `<tr><td>${i+1}</td><td>${esc(x.name)}</td><td>${esc(x.contact||"")}</td><td class="box"></td></tr>`).join("")
+    + Array.from({ length:blanks }, (_,i) => `<tr><td>${r.length+i+1}</td><td></td><td></td><td class="box"></td></tr>`).join("");
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(e.title)} sign-in</title>
+    <style>body{font-family:Georgia,serif;margin:32px;color:#111}h1{margin:0 0 4px;font-size:26px}p{margin:0 0 18px}
+    table{width:100%;border-collapse:collapse}th,td{border:1px solid #444;padding:10px 8px;text-align:left;font-size:15px}
+    th{background:#eee}td:first-child{width:36px;text-align:center}.box{width:90px}</style></head><body>
+    <h1>${esc(e.title)}</h1><p>${esc(fmtDate(e.date,{weekday:"long",month:"long",day:"numeric",year:"numeric"}))} at ${esc(fmtTime(e.time))}. ${e.seats} seats. ${esc(e.fee||"Free")}.</p>
+    <table><thead><tr><th>#</th><th>Name</th><th>Contact</th><th>Here</th></tr></thead><tbody>${rows}</tbody></table>
+    <script>window.onload=function(){window.print()}<\/script></body></html>`);
+  w.document.close();
 }
 
 /* ---------- CSV upload ---------- */
@@ -598,7 +881,8 @@ async function uploadCsv(btn){
 route(); renderAll();
 if(sb){
   // Runs on page load and whenever someone logs in or out.
-  sb.auth.onAuthStateChange(() => {
+  sb.auth.onAuthStateChange((event) => {
+    if(event === "PASSWORD_RECOVERY"){ state.recovery = true; location.hash = "#account"; }
     setTimeout(async () => { await refreshStaff(); await loadAll(); route(); }, 0);
   });
   // Refresh when someone comes back to the tab.
