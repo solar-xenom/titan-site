@@ -73,7 +73,7 @@
   <!-- SHOP -->
   <section class="view" id="view-shop" hidden>
     <h1>In the store</h1>
-    <p class="muted">Stock is updated by the store. Call ahead to hold something.</p>
+    <p class="muted" id="shopSub">Stock is updated by the store.</p>
     <div class="toolbar">
       <input type="search" id="shopSearch" placeholder="Search by name" aria-label="Search inventory">
       <div class="chips" id="shopChips"></div>
@@ -96,12 +96,23 @@
         <div id="dndEvents"></div>
       </div>
     </div>
+
+    <div class="campaigns">
+      <div class="camp-head">
+        <h2>Ongoing campaigns</h2>
+        <button class="btn" id="dmOfferBtn">Want to run a game?</button>
+      </div>
+      <p class="muted">Weekly groups that play together every week. Join once and you're in for every session.</p>
+      <div id="dmOffer" class="panel" hidden></div>
+      <div id="campaignList"></div>
+    </div>
   </section>
 
   <!-- NEWS -->
   <section class="view" id="view-news" hidden>
     <h1>Announcements</h1>
     <div id="newsList"></div>
+    <div id="fbFeed"></div>
   </section>
 
   <!-- ONE GAME NIGHT -->
@@ -177,6 +188,14 @@
         <h3>My game nights</h3>
         <div id="myNights"></div>
       </div>
+      <div class="panel">
+        <h3>My campaigns</h3>
+        <div id="myCamps"></div>
+      </div>
+      <div class="panel">
+        <h3>My holds and preorders</h3>
+        <div id="myRes"></div>
+      </div>
       <div class="panel" style="max-width:560px">
         <h3>Staff</h3>
         <div id="staffBox"></div>
@@ -193,6 +212,8 @@
       <button class="chip" data-staff="inventory" aria-pressed="true">Inventory</button>
       <button class="chip" data-staff="events" aria-pressed="false">Game nights</button>
       <button class="chip" data-staff="news" aria-pressed="false">Announcements</button>
+      <button class="chip" data-staff="res" aria-pressed="false" id="resChip">Holds &amp; preorders</button>
+      <button class="chip" data-staff="camps" aria-pressed="false" id="campChip">Campaigns</button>
       <button class="chip" data-staff="blocked" aria-pressed="false">Blocked players</button>
       <button class="chip" data-staff="team" aria-pressed="false" id="teamChip" hidden>Team</button>
       <button class="chip" data-staff="look" aria-pressed="false" id="lookChip" hidden>Site settings</button>
@@ -209,14 +230,47 @@
           <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed all day</th></tr></thead>
           <tbody id="siHours"></tbody>
         </table></div>
+        <div class="field"><label for="siFb">Facebook page link</label><input type="text" id="siFb" maxlength="300" placeholder="https://www.facebook.com/yourstorepage"></div>
         <div class="field" style="margin-top:12px"><label for="siNote">Special hours note</label><input type="text" id="siNote" maxlength="160" placeholder="Closed Thanksgiving. Open late Friday for the prerelease."></div>
         <button class="btn primary" id="siSave">Save store info</button>
+      </div>
+      <div class="panel" style="max-width:640px">
+        <h3>Shop features</h3>
+        <p class="note">Turn these off anytime. The buttons disappear from the shop right away, and requests already made stay in the staff list.</p>
+        <label class="switch-row"><input type="checkbox" id="featHolds"> <span><strong>Holds for pickup</strong><br><span class="note">Customers reserve in-stock items to pick up and pay for at the store.</span></span></label>
+        <label class="switch-row"><input type="checkbox" id="featPre"> <span><strong>Preorders</strong><br><span class="note">Customers reserve items marked "coming soon," like a new card set.</span></span></label>
+        <button class="btn primary" id="featSave">Save features</button>
       </div>
       <div class="panel" style="max-width:520px">
         <h3>Seasonal theme</h3>
         <p class="note">Changes the colors for every visitor in both light and dark mode. Christmas adds falling snow. Visitors still pick light or dark for themselves.</p>
         <div class="field"><label for="seasonSel">Theme</label><select id="seasonSel"></select></div>
         <button class="btn primary" id="seasonSave">Save theme</button>
+      </div>
+    </div>
+
+    <div data-pane="res" hidden>
+      <div class="panel">
+        <h3>Holds and preorders</h3>
+        <p class="note" id="resOffNote" hidden></p>
+        <div class="chips" style="margin:6px 0 14px">
+          <button class="chip" data-resfilter="active" aria-pressed="true">Active</button>
+          <button class="chip" data-resfilter="done" aria-pressed="false">Finished</button>
+        </div>
+        <div id="resList"></div>
+      </div>
+    </div>
+
+    <div data-pane="camps" hidden>
+      <div class="panel">
+        <h3>Waiting for approval</h3>
+        <p class="note">Players who offered to run a game. Approve to show it on the Game nights page, or decline to remove it.</p>
+        <div id="campPending"></div>
+      </div>
+      <div class="panel">
+        <h3>All campaigns</h3>
+        <p class="note">Add a new campaign from the Game nights page with "Want to run a game?" Staff games go live right away.</p>
+        <div id="campAll"></div>
       </div>
     </div>
 
@@ -247,10 +301,11 @@
       <div class="panel" id="csvPanel">
         <h3>Upload inventory</h3>
         <p class="note">Save a spreadsheet as CSV with these columns. Rows with a SKU that already exists get updated. New SKUs get added.</p>
-        <div class="csv-hint">sku,name,category,price,qty
-PKM-SV-ETB,Pokémon Scarlet &amp; Violet Elite Trainer Box,tcg,49.99,6
-DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
-        <p class="note" style="margin-top:8px">Category must be one of: dnd, tcg, models, board, collectibles, accessories.</p>
+        <div class="csv-hint">sku,name,category,price,qty,barcode,preorder,release_date
+PKM-SV-ETB,Pokémon Scarlet &amp; Violet Elite Trainer Box,tcg,49.99,6,820650851234,,
+DND-PHB24,Player's Handbook (2024),dnd,49.95,3,9780786969517,,
+PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05</div>
+        <p class="note" style="margin-top:8px">Category must be one of: dnd, tcg, models, board, collectibles, accessories. The last three columns are optional. Put "yes" under preorder for coming-soon items.</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
           <input type="file" id="csvFile" accept=".csv,text/csv" aria-label="Choose CSV file">
           <button class="btn primary" id="csvUpload" disabled>Upload</button>
@@ -265,7 +320,11 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
           <div class="field"><label for="niCat">Category</label><select id="niCat"></select></div>
           <div class="field"><label for="niPrice">Price</label><input type="number" id="niPrice" min="0" step="0.01"></div>
           <div class="field"><label for="niQty">Qty</label><input type="number" id="niQty" min="0" step="1"></div>
+          <div class="field"><label for="niBarcode">Barcode (optional)</label><input type="text" id="niBarcode" inputmode="numeric" maxlength="32"></div>
+          <div class="field"><label for="niRelease">Release date (preorders)</label><input type="date" id="niRelease"></div>
+          <div class="field" style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;color:var(--ink)"><input type="checkbox" id="niPreorder"> Coming soon, open for preorder</label></div>
         </div>
+        <p class="note" style="margin-top:0">Add a photo after saving with the <strong>More</strong> button in the list below.</p>
         <button class="btn primary" id="niAdd">Add item</button>
       </div>
       <div class="panel">
@@ -332,6 +391,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
       <p id="fAddr"></p>
       <p><a id="fDir" target="_blank" rel="noopener">Get directions</a></p>
       <p><a id="fPhone"></a></p>
+      <p><a id="fFb" target="_blank" rel="noopener" hidden>Find us on Facebook</a></p>
     </div>
     <div>
       <h4>Hours</h4>

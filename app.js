@@ -6,7 +6,7 @@ const CATS = {
   dnd:{label:"D&D & RPGs"}, tcg:{label:"Trading cards"}, models:{label:"Model kits"},
   board:{label:"Board games"}, collectibles:{label:"Funko & collectibles"}, accessories:{label:"Dice, sleeves & supplies"}
 };
-const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], posts:[], replies:[], bKind:"all", editing:null, request:null, team:[], requests:[], shopCat:"all", editEvent:null, editNews:null, blocked:[], amBlocked:false, recovery:false, store:null };
+const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], posts:[], replies:[], bKind:"all", editing:null, request:null, team:[], requests:[], shopCat:"all", editEvent:null, editNews:null, blocked:[], amBlocked:false, recovery:false, store:null, feat:{ holds:true, preorders:true, fb:"" }, reservations:[], reserve:null, resFilter:"active", expandItem:null, photoCands:null, campaigns:[], members:[], editCamp:null, dmOpen:false, pendingRender:false, live:null };
 const configured = !SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
 const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
@@ -52,6 +52,7 @@ async function loadSettings(){
   const { data, error } = await sb.from("site_settings").select("*").eq("id", 1).maybeSingle();
   if(!error && data){
     applySeason(data.season);
+    state.feat = { holds: data.holds_enabled !== false, preorders: data.preorders_enabled !== false, fb: data.facebook_url || "" };
     if(data.address || data.hours){
       state.store = { address:data.address || DEFAULT_STORE.address, phone:data.phone || "", hours:data.hours || DEFAULT_STORE.hours, note:data.hours_note || "" };
       renderStore();
@@ -97,6 +98,7 @@ function renderStore(){
   $("#fDir").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(st.address);
   $("#fPhone").textContent = st.phone; $("#fPhone").href = "tel:" + st.phone.replace(/[^0-9+]/g,"");
   $("#fPhone").hidden = !st.phone;
+  const fb = state.feat?.fb || ""; $("#fFb").hidden = !fb; if(fb) $("#fFb").href = fb;
   $("#fHours").innerHTML = [1,2,3,4,5,6,0].map(i => { const [k,name] = DAYS[i];
     return `<tr class="${i===idx?"today":""}"><td>${name}</td><td>${esc(dayHours(st.hours[k]))}</td></tr>`; }).join("");
   $("#fNote").textContent = st.note; $("#fNote").hidden = !st.note;
@@ -106,6 +108,7 @@ function renderStore(){
 function renderStoreForm(){
   const st = state.store;
   $("#siAddress").value = st.address; $("#siPhone").value = st.phone; $("#siNote").value = st.note;
+  $("#siFb").value = state.feat.fb || ""; $("#featHolds").checked = state.feat.holds; $("#featPre").checked = state.feat.preorders;
   $("#siHours").innerHTML = [1,2,3,4,5,6,0].map(i => { const [k,name] = DAYS[i], h = st.hours[k] || {};
     return `<tr><td data-label="Day">${name}</td>
       <td data-label="Opens"><input type="time" data-h-open="${k}" value="${esc(h.open||"")}" aria-label="${name} opens"></td>
@@ -143,9 +146,9 @@ function route(){
   $("#teamChip").hidden = !state.isOwner;
   $("#lookChip").hidden = !state.isOwner;
   $("#csvPanel").hidden = !state.isOwner;
-      // Only jump to the top when the page actually changes, not when data refreshes.
-     const here = location.hash || "#home";
-     if(state.lastHash !== here){ state.lastHash = here; window.scrollTo(0,0); }
+  // Only jump to the top when the page actually changes, not when data refreshes.
+  const here = location.hash || "#home";
+  if(state.lastHash !== here){ state.lastHash = here; window.scrollTo(0,0); }
 }
 window.addEventListener("hashchange", route);
 
@@ -181,6 +184,17 @@ function renderBlocked(){
 }
 const blockBtn = (uid, name) => (state.isStaff && uid && uid !== state.user?.id)
   ? `<button class="btn small danger" data-block-user="${esc(uid)}" data-block-name="${esc(name)}">Block</button>` : "";
+async function loadReservations(){
+  if(!state.user){ state.reservations = []; return; }
+  let q = sb.from("reservations").select("*").order("created_at", { ascending:false }).limit(300);
+  if(!state.isStaff) q = q.eq("user_id", state.user.id);
+  state.reservations = must(await q);
+}
+async function loadCampaigns(){
+  state.campaigns = must(await sb.from("campaigns").select("*").order("weekday").order("start_time"));
+  const ids = state.campaigns.map(c => c.id);
+  state.members = ids.length ? must(await sb.from("campaign_members").select("*").in("campaign_id", ids).order("joined_at")) : [];
+}
 async function loadRoster(){
   if(!state.isStaff){ state.roster = []; return; }
   state.roster = must(await sb.from("signups").select("*").order("created_at"));
@@ -192,7 +206,7 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase key in config.js to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadBoard(), loadBlocked()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadBoard(), loadBlocked(), loadReservations(), loadCampaigns()]);
     setStatus("");
     state.loaded = true;
   }catch(e){
@@ -248,6 +262,19 @@ function renderAccount(){
         <div class="note">${esc(fmtDate(m.events.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime((m.events.time||"").slice(0,5)))}</div></div>
       <button class="btn small danger" data-cancel="${esc(m.id)}">Cancel my seat</button>
     </div>`).join("") : `<p class="note">You're not signed up for anything yet. <a href="#events">See game nights</a></p>`;
+  const RS = { requested:"Requested", ready:"Ready for pickup", picked_up:"Picked up", cancelled:"Cancelled" };
+  const myRes = state.reservations.filter(r => r.user_id === state.user.id && (r.status === "requested" || r.status === "ready"));
+  $("#myRes").innerHTML = myRes.length ? myRes.map(r => `
+    <div class="mine-row"><div><span class="pill kind">${r.kind === "hold" ? "Hold" : "Preorder"}</span><strong>${esc(r.product_name)}</strong>${r.qty > 1 ? ` × ${r.qty}` : ""}
+      <div class="note"><span class="res-status ${r.status}">${RS[r.status]}</span>, requested ${esc(timeAgo(r.created_at))}</div></div>
+      <button class="btn small danger" data-res-cancel="${esc(r.id)}">Cancel</button></div>`).join("")
+    : `<p class="note">Nothing reserved right now. <a href="#shop">Browse the shop</a></p>`;
+  const myC = state.campaigns.filter(c => c.dm_user === state.user.id || state.members.some(m => m.campaign_id === c.id && m.user_id === state.user.id)).filter(c => c.status !== "ended");
+  $("#myCamps").innerHTML = myC.length ? myC.map(c => `
+    <div class="mine-row"><div><strong>${esc(c.title)}</strong>${c.dm_user === state.user.id ? ' <span class="pill kind">You\'re the DM</span>' : ""}${c.status === "pending" ? ' <span class="pill">Waiting for approval</span>' : ""}
+      <div class="note">${WEEKDAYS[c.weekday]}s at ${esc(fmtTime((c.start_time||"").slice(0,5)))}${c.status !== "pending" ? `. Next: ${esc(fmtDate(nextSession(c),{weekday:"short",month:"short",day:"numeric"}))}` : ""}</div></div>
+      <a class="btn small" href="#events">View</a></div>`).join("")
+    : `<p class="note">You're not in a campaign yet. <a href="#events">See ongoing campaigns</a></p>`;
   $("#staffBox").innerHTML = state.isStaff
     ? `<p>You're on staff as ${state.isOwner ? "an owner" : "an employee"}.</p><a class="btn small" href="#staff">Open the Staff page</a>`
     : state.request
@@ -283,10 +310,33 @@ function renderTeam(){
 const taken = id => state.counts[id] || 0;
 const rosterFor = id => state.roster.filter(s => s.event_id === id);
 
-function itemTag(it){
-  const q = Number(it.qty)||0;
-  const stock = q<=0 ? '<span class="stock out">Sold out</span>' : q<=2 ? `<span class="stock low">Only ${q} left</span>` : `<span class="stock">${q} in stock</span>`;
-  return `<div class="tag"><div class="cat">${esc(CATS[it.category]?.label||"Other")}</div><div class="name">${esc(it.name)}</div><div class="bottom"><span class="price">${money(it.price)}</span>${stock}</div></div>`;
+function itemTag(it, placeholder){
+  const q = Number(it.qty)||0, soon = !!it.preorder;
+  const stock = soon ? `<span class="stock soon">${it.release_date ? `Coming ${esc(fmtDate(it.release_date,{month:"short",day:"numeric"}))}` : "Coming soon"}</span>`
+    : q<=0 ? '<span class="stock out">Sold out</span>' : q<=2 ? `<span class="stock low">Only ${q} left</span>` : `<span class="stock">${q} in stock</span>`;
+  let action = "";
+  if(!state.amBlocked){
+    if(soon && state.feat.preorders) action = `<button class="btn small primary" data-reserve="${esc(it.sku)}" data-kind="preorder">Preorder</button>`;
+    else if(!soon && q > 0 && state.feat.holds) action = `<button class="btn small" data-reserve="${esc(it.sku)}" data-kind="hold">Hold for pickup</button>`;
+  }
+  let form = "";
+  if(state.reserve && state.reserve.sku === it.sku){
+    const max = state.reserve.kind === "hold" ? Math.min(q, 10) : 10;
+    form = `<div class="reserve-form">
+      <label for="rq-qty">How many?</label>
+      <select id="rq-qty">${Array.from({length:Math.max(1,max)},(_,i)=>`<option>${i+1}</option>`).join("")}</select>
+      ${state.user ? "" : `<input type="text" id="rq-name" maxlength="60" placeholder="Your name" aria-label="Your name">
+      <input type="text" id="rq-contact" maxlength="80" placeholder="Phone or email" aria-label="Phone or email">`}
+      <p class="note">${state.reserve.kind === "hold" ? "Pay when you pick it up. The store will set it aside for you." : "Pay when it comes in. The store will let you know when it's ready."}</p>
+      <div class="bactions"><button class="btn small primary" data-reserve-go="1">${state.reserve.kind === "hold" ? "Request hold" : "Request preorder"}</button><button class="btn small" data-reserve-cancel="1">Cancel</button></div>
+    </div>`;
+    action = "";
+  }
+  return `<div class="tag${it.image_url || placeholder ? " has-img" : ""}">
+    ${it.image_url ? `<div class="tag-img"><img src="${esc(it.image_url)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('ph');this.remove()"></div>` : placeholder ? `<div class="tag-img ph"></div>` : ""}
+    <div class="cat">${esc(CATS[it.category]?.label||"Other")}${soon ? ' <span class="pill kind">Preorder</span>' : ""}</div><div class="name">${esc(it.name)}</div>
+    <div class="bottom"><span class="price">${money(it.price)}</span>${stock}</div>
+    ${action ? `<div class="tag-act">${action}</div>` : ""}${form}</div>`;
 }
 
 function renderHome(){
@@ -302,19 +352,24 @@ function renderHome(){
   const news = sortedNews().slice(0,2);
   $("#homeNews").innerHTML = news.length ? news.map(p=>postHtml(p,false)).join("") : `<p class="muted">No announcements yet.</p>`;
   const fresh = state.inventory.filter(i=>i.qty>0).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,4);
-  $("#homeNew").innerHTML = fresh.length ? fresh.map(itemTag).join("") : `<div class="empty">Inventory shows up here once it's uploaded.</div>`;
+  $("#homeNew").innerHTML = fresh.length ? fresh.map(i => itemTag(i, fresh.some(x => x.image_url))).join("") : `<div class="empty">Inventory shows up here once it's uploaded.</div>`;
 }
 
 function renderShop(){
-  $("#shopChips").innerHTML = [["all","Everything"],...Object.entries(CATS).map(([k,c])=>[k,c.label])]
+  const chips = [["all","Everything"],...Object.entries(CATS).map(([k,c])=>[k,c.label])];
+  if(state.inventory.some(i => i.preorder)) chips.push(["soon","Coming soon"]);
+  $("#shopChips").innerHTML = chips
     .map(([k,l]) => `<button class="chip" data-cat="${k}" aria-pressed="${state.shopCat===k}">${esc(l)}</button>`).join("");
   const q = $("#shopSearch").value.trim().toLowerCase(), only = $("#inStockOnly").checked;
   const list = state.inventory.filter(i =>
-    (state.shopCat==="all" || i.category===state.shopCat) &&
+    (state.shopCat==="all" || (state.shopCat==="soon" ? i.preorder : i.category===state.shopCat)) &&
     (!q || i.name.toLowerCase().includes(q)) &&
     (!only || i.qty > 0)
   ).sort((a,b)=>a.name.localeCompare(b.name));
-  $("#shopItems").innerHTML = list.length ? list.map(itemTag).join("") :
+  const anyImg = list.some(i => i.image_url);
+  const can = [state.feat.holds && "hold in-stock items for pickup", state.feat.preorders && "preorder new releases"].filter(Boolean);
+  $("#shopSub").textContent = "Stock is updated by the store." + (can.length ? ` You can ${can.join(" or ")}, then pay when you pick them up.` : " Call ahead to hold something.");
+  $("#shopItems").innerHTML = list.length ? list.map(i => itemTag(i, anyImg)).join("") :
     `<div class="empty" style="grid-column:1/-1">${state.inventory.length ? "Nothing matches that search." : "The store's inventory hasn't been uploaded yet."}</div>`;
 }
 
@@ -454,6 +509,45 @@ function renderNews(){
   $("#newsList").innerHTML = list.length ? list.map(p=>postHtml(p,false)).join("") : `<div class="empty">No announcements yet.</div>`;
 }
 
+function itemMoreRow(i){
+  const c = state.photoCands && state.photoCands.sku === i.sku ? state.photoCands : null;
+  return `<tr class="item-more"><td colspan="6"><div class="more-grid">
+    <div class="more-photo">${i.image_url ? `<img src="${esc(i.image_url)}" alt="Photo of ${esc(i.name)}">` : `<div class="no-photo">No photo</div>`}</div>
+    <div>
+      <div class="grid3">
+        <div class="field"><label>Barcode</label><input type="text" class="inline-in" inputmode="numeric" maxlength="32" value="${esc(i.barcode||"")}" data-field="barcode" data-sku="${esc(i.sku)}" aria-label="Barcode for ${esc(i.name)}"></div>
+        <div class="field"><label>Release date</label><input type="date" class="inline-in" value="${esc(i.release_date||"")}" data-field="release_date" data-sku="${esc(i.sku)}" aria-label="Release date for ${esc(i.name)}"></div>
+        <div class="field" style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;margin:0 0 10px;color:var(--ink)"><input type="checkbox" data-field="preorder" data-sku="${esc(i.sku)}" ${i.preorder?"checked":""}> Coming soon, preorder</label></div>
+      </div>
+      <div class="bactions">
+        <button class="btn small" data-findphoto="${esc(i.sku)}">Find photo from barcode</button>
+        <label class="btn small" style="cursor:pointer">Upload or take photo<input type="file" accept="image/*" data-upload="${esc(i.sku)}" hidden></label>
+        ${i.image_url ? `<button class="btn small danger" data-rmphoto="${esc(i.sku)}">Remove photo</button>` : ""}
+      </div>
+      ${c ? `<div class="cands">${c.loading ? `<p class="note">Looking up barcode...</p>` : c.note ? `<p class="note">${esc(c.note)}</p>` : ""}
+        ${c.images && c.images.length ? `<p class="note">Tap the photo you want to use${c.title ? ` for "${esc(c.title)}"` : ""}:</p><div class="cand-row">${c.images.map(u => `<button class="cand" data-pick="${esc(u)}" data-sku="${esc(i.sku)}"><img src="${esc(u)}" alt="" loading="lazy" onerror="this.parentNode.remove()"></button>`).join("")}</div>` : (!c.loading && !c.note ? `<p class="note">No photos found for that barcode. Try uploading one instead.</p>` : "")}
+      </div>` : ""}
+    </div>
+  </div></td></tr>`;
+}
+async function setPhoto(sku, url){
+  must(await sb.from("products").update({ image_url:url, updated_at:nowIso() }).eq("sku", sku));
+  state.photoCands = null; await loadProducts(); renderInventoryTable(); renderHome(); renderShop();
+}
+// Shrinks a phone photo before upload so it loads fast and saves storage.
+function shrinkImage(file, maxSide = 1000){
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob(b => b ? resolve(b) : reject(new Error("Couldn't read that photo")), "image/jpeg", 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Couldn't read that photo")); };
+    img.src = url;
+  });
+}
 function renderInventoryTable(){
   const q = $("#invSearch").value.trim().toLowerCase();
   const list = state.inventory.filter(i => !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q))
@@ -462,7 +556,8 @@ function renderInventoryTable(){
     <td data-label="Name"><input type="text" class="inline-in name-in" maxlength="120" value="${esc(i.name)}" data-field="name" data-sku="${esc(i.sku)}" aria-label="Name for ${esc(i.sku)}"></td>
     <td data-label="Category"><select class="inline-in" data-field="category" data-sku="${esc(i.sku)}" aria-label="Category for ${esc(i.name)}">${Object.entries(CATS).map(([k,c]) => `<option value="${k}" ${i.category===k?"selected":""}>${esc(c.label)}</option>`).join("")}</select></td>
     <td class="num" data-label="Price"><input type="number" class="inline-in price-in" min="0" step="0.01" value="${Number(i.price).toFixed(2)}" data-field="price" data-sku="${esc(i.sku)}" aria-label="Price for ${esc(i.name)}"></td><td class="num" data-label="Qty"><input type="number" class="inline-in qty-in" min="0" value="${i.qty}" data-qty="${esc(i.sku)}" aria-label="Quantity for ${esc(i.name)}"></td>
-    <td class="act">${state.isOwner?`<button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button>`:""}</td></tr>`).join("") :
+    <td class="act"><button class="btn small" data-more="${esc(i.sku)}" aria-expanded="${state.expandItem===i.sku}">${state.expandItem===i.sku ? "Less" : "More"}</button> ${state.isOwner?`<button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button>`:""}</td></tr>
+    ${state.expandItem===i.sku ? itemMoreRow(i) : ""}`).join("") :
     `<tr><td colspan="6" class="muted">No items yet. Upload a CSV or add one above.</td></tr>`;
 }
 function renderStaffEvents(){
@@ -470,9 +565,139 @@ function renderStaffEvents(){
 }
 function renderStaffNews(){ $("#staffNews").innerHTML = sortedNews().map(p=>postHtml(p,true)).join(""); }
 
+/* ---------- holds and preorders (staff) ---------- */
+function renderRes(){
+  if(!state.isStaff) return;
+  const active = state.reservations.filter(r => r.status === "requested" || r.status === "ready");
+  const waiting = state.reservations.filter(r => r.status === "requested").length;
+  $("#resChip").textContent = waiting ? `Holds & preorders (${waiting})` : "Holds & preorders";
+  const off = [!state.feat.holds && "Holds", !state.feat.preorders && "Preorders"].filter(Boolean);
+  $("#resOffNote").hidden = !off.length;
+  $("#resOffNote").textContent = off.length ? `${off.join(" and ")} ${off.length > 1 ? "are" : "is"} turned off in Site settings, so customers can't make new requests.` : "";
+  document.querySelectorAll("[data-resfilter]").forEach(b => b.setAttribute("aria-pressed", b.dataset.resfilter === state.resFilter));
+  const list = state.resFilter === "active" ? active : state.reservations.filter(r => r.status === "picked_up" || r.status === "cancelled");
+  const RS = { requested:"Requested", ready:"Ready for pickup", picked_up:"Picked up", cancelled:"Cancelled" };
+  $("#resList").innerHTML = list.length ? list.map(r => `
+    <div class="res-row ${r.status}">
+      <div class="res-main">
+        <span class="pill kind">${r.kind === "hold" ? "Hold" : "Preorder"}</span><span class="res-status ${r.status}">${RS[r.status]}</span>
+        <div class="res-item"><strong>${esc(r.product_name)}</strong>${r.qty > 1 ? ` × ${r.qty}` : ""}</div>
+        <div class="note">${esc(r.name)}${r.contact ? `, ${esc(r.contact)}` : ""}. Requested ${esc(timeAgo(r.created_at))}.</div>
+      </div>
+      <div class="bactions">
+        ${r.status === "requested" ? `<button class="btn small primary" data-res-status="${esc(r.id)}" data-to="ready">Mark ready</button>` : ""}
+        ${r.status === "ready" ? `<button class="btn small primary" data-res-status="${esc(r.id)}" data-to="picked_up">Picked up</button>` : ""}
+        ${r.status === "requested" || r.status === "ready" ? `<button class="btn small danger" data-res-status="${esc(r.id)}" data-to="cancelled">Cancel</button>` : ""}
+        ${(r.status === "picked_up" || r.status === "cancelled") && state.isOwner ? `<button class="btn small danger" data-res-del="${esc(r.id)}">Delete</button>` : ""}
+      </div>
+    </div>`).join("") : `<p class="note">${state.resFilter === "active" ? "No open holds or preorders." : "Nothing finished yet."}</p>`;
+}
+
+/* ---------- campaigns and DM sign-ups ---------- */
+const WEEKDAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function nextSession(c){
+  const now = new Date(), d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let add = (c.weekday - d.getDay() + 7) % 7;
+  if(add === 0){ const [h,m] = (c.start_time||"00:00").split(":").map(Number); if(now.getHours()*60 + now.getMinutes() > h*60 + m) add = 7; }
+  d.setDate(d.getDate() + add);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function campForm(c){
+  const v = c || { title:"", system:"D&D 5e", weekday:0, start_time:"14:00", seats:5, level:"", description:"", note:"", dm_name:"" };
+  const id = c ? c.id : "new";
+  return `<div class="camp-form">
+    <h3 style="margin:0 0 12px">${c ? "Editing campaign" : "Offer to run a game"}</h3>
+    ${c ? "" : `<p class="note">${state.isStaff ? "Staff games go live right away." : "The store looks over new games before they show up. You'll be listed as the DM."}</p>`}
+    <div class="grid2">
+      <div class="field"><label for="cf-title">Campaign name</label><input type="text" id="cf-title" maxlength="100" value="${esc(v.title)}" placeholder="Curse of Strahd"></div>
+      <div class="field"><label for="cf-system">Game system</label><input type="text" id="cf-system" maxlength="60" value="${esc(v.system||"")}" placeholder="D&D 5e, Pathfinder 2e"></div>
+    </div>
+    <div class="grid3">
+      <div class="field"><label for="cf-day">Day</label><select id="cf-day">${WEEKDAYS.map((n,i)=>`<option value="${i}" ${Number(v.weekday)===i?"selected":""}>${n}s</option>`).join("")}</select></div>
+      <div class="field"><label for="cf-time">Start time</label><input type="time" id="cf-time" value="${esc((v.start_time||"").slice(0,5))}"></div>
+      <div class="field"><label for="cf-seats">Player seats</label><input type="number" id="cf-seats" min="1" max="12" value="${v.seats}"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="cf-level">Who it's for</label><input type="text" id="cf-level" maxlength="60" value="${esc(v.level||"")}" placeholder="Beginners welcome, level 5 characters"></div>
+      ${state.isStaff ? `<div class="field"><label for="cf-dm">DM name</label><input type="text" id="cf-dm" maxlength="60" value="${esc(v.dm_name || myName())}"></div>` : "<div></div>"}
+    </div>
+    <div class="field"><label for="cf-desc">About the campaign</label><textarea id="cf-desc" rows="4" maxlength="2000" placeholder="The story, the tone, what players should bring">${esc(v.description||"")}</textarea></div>
+    ${c ? `<div class="field"><label for="cf-note">Session note</label><input type="text" id="cf-note" maxlength="200" value="${esc(v.note||"")}" placeholder="No session Thanksgiving week"></div>` : ""}
+    <div class="bactions"><button class="btn small primary" data-save-camp="${esc(id)}">${c ? "Save" : state.isStaff ? "Add campaign" : "Send to the store"}</button><button class="btn small" data-cancel-camp="1">Cancel</button></div>
+  </div>`;
+}
+function campCard(c){
+  const members = state.members.filter(m => m.campaign_id === c.id);
+  const isDM = !!state.user && c.dm_user === state.user.id;
+  const mine = state.user && members.find(m => m.user_id === state.user.id);
+  const canManage = isDM || state.isStaff;
+  if(state.editCamp === c.id && canManage) return `<article class="camp editing">${campForm(c)}</article>`;
+  const LABEL = { pending:"Waiting for approval", recruiting:"Open to join", full:"Full", ended:"Ended" };
+  const pct = Math.min(100, Math.round(members.length / c.seats * 100));
+  let join = "";
+  if(c.status === "recruiting" || c.status === "full"){
+    if(!state.user) join = c.status === "recruiting" ? `<p class="note"><a href="#account">Log in</a> to join this campaign.</p>` : "";
+    else if(isDM) join = `<p class="signed">You're the DM</p>`;
+    else if(mine) join = `<p class="signed">✓ You're in</p><button class="btn small" data-leave-camp="${esc(c.id)}">Leave campaign</button>`;
+    else if(state.amBlocked) join = "";
+    else if(c.status === "recruiting") join = `<button class="btn primary" data-join-camp="${esc(c.id)}">Join campaign</button>`;
+    else join = `<p class="note">This group is full right now.</p>`;
+  }
+  const manage = canManage ? `<div class="bactions">
+      <button class="btn small" data-edit-camp="${esc(c.id)}">Edit</button>
+      ${c.status === "pending" && state.isStaff ? `<button class="btn small primary" data-camp-status="${esc(c.id)}" data-to="recruiting">Approve</button><button class="btn small danger" data-del-camp="${esc(c.id)}">Decline</button>` : ""}
+      ${c.status === "pending" && !state.isStaff ? `<button class="btn small danger" data-del-camp="${esc(c.id)}">Withdraw</button>` : ""}
+      ${c.status === "recruiting" ? `<button class="btn small" data-camp-status="${esc(c.id)}" data-to="full">Close to new players</button>` : ""}
+      ${c.status === "full" && members.length < c.seats ? `<button class="btn small" data-camp-status="${esc(c.id)}" data-to="recruiting">Reopen</button>` : ""}
+      ${c.status === "recruiting" || c.status === "full" ? `<button class="btn small danger" data-camp-status="${esc(c.id)}" data-to="ended">End campaign</button>` : ""}
+      ${c.status === "ended" && state.isStaff ? `<button class="btn small" data-camp-status="${esc(c.id)}" data-to="recruiting">Restart</button><button class="btn small danger" data-del-camp="${esc(c.id)}">Delete</button>` : ""}
+    </div>` : "";
+  return `<article class="camp ${c.status}">
+    ${c.system ? `<span class="pill kind">${esc(c.system)}</span>` : ""}${c.level ? `<span class="pill">${esc(c.level)}</span>` : ""}<span class="pill camp-st ${c.status}">${LABEL[c.status]}</span>
+    <h3>${esc(c.title)}</h3>
+    <div class="byline">Run by ${esc(c.dm_name || "the store")}. ${WEEKDAYS[c.weekday]}s at ${esc(fmtTime((c.start_time||"").slice(0,5)))}.</div>
+    ${c.status === "recruiting" || c.status === "full" ? `<div class="when">Next session: ${esc(fmtDate(nextSession(c),{weekday:"long",month:"long",day:"numeric"}))}</div>` : ""}
+    ${c.note ? `<p class="camp-note">${esc(c.note)}</p>` : ""}
+    ${c.description ? `<div class="desc">${esc(c.description)}</div>` : ""}
+    <div class="seats ${members.length >= c.seats ? "full" : ""}">${members.length} of ${c.seats} players</div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    ${members.length ? `<p class="camp-players">${members.map(m => `<span class="player">${esc(m.name)}${state.user && m.user_id === state.user.id ? " (you)" : ""}${canManage ? ` <button class="x" data-kick="${esc(c.id)}" data-user="${esc(m.user_id)}" aria-label="Remove ${esc(m.name)}">×</button>` : ""}</span>`).join("")}</p>` : ""}
+    ${join}${manage}
+  </article>`;
+}
+function renderCampaigns(){
+  const visible = state.campaigns.filter(c => c.status === "recruiting" || c.status === "full" || (c.status === "pending" && state.user && c.dm_user === state.user.id && !state.isStaff));
+  $("#campaignList").innerHTML = visible.length ? visible.map(campCard).join("") : `<div class="empty">No ongoing campaigns yet. Want to run one?</div>`;
+  $("#dmOffer").hidden = !state.dmOpen;
+  if(state.dmOpen){
+    const typing = $("#dmOffer").contains(document.activeElement);
+    if(!typing) $("#dmOffer").innerHTML = state.user ? (state.amBlocked ? `<p class="note">Your account can't offer games right now. Please talk to the store.</p>` : campForm(null)) : `<p style="margin:0"><a href="#account">Log in or make an account</a> to offer a game.</p>`;
+  }
+  if(state.isStaff){
+    const pend = state.campaigns.filter(c => c.status === "pending");
+    $("#campChip").textContent = pend.length ? `Campaigns (${pend.length})` : "Campaigns";
+    $("#campPending").innerHTML = pend.length ? pend.map(campCard).join("") : `<p class="note">No one is waiting.</p>`;
+    const rest = state.campaigns.filter(c => c.status !== "pending");
+    $("#campAll").innerHTML = rest.length ? rest.map(campCard).join("") : `<p class="note">No campaigns yet.</p>`;
+  }
+}
+
+/* ---------- Facebook feed ---------- */
+function renderFb(){
+  const url = state.feat.fb;
+  if(!url){ $("#fbFeed").innerHTML = ""; $("#fbFeed").dataset.url = ""; return; }
+  if($("#fbFeed").dataset.url === url) return;   // don't reload the feed on every refresh
+  $("#fbFeed").dataset.url = url;
+  const src = "https://www.facebook.com/plugins/page.php?href=" + encodeURIComponent(url) + "&tabs=timeline&width=500&height=700&small_header=true&adapt_container_width=true&hide_cover=false&show_facepile=false";
+  $("#fbFeed").innerHTML = `<h2 style="margin-top:28px">From our Facebook</h2>
+    <div class="fb-wrap"><iframe src="${esc(src)}" width="500" height="700" style="border:none;overflow:hidden" scrolling="no" frameborder="0" allowfullscreen="true" allow="encrypted-media" loading="lazy" title="Titan Game and Hobby on Facebook"></iframe></div>
+    <p class="note">Don't see posts? Some browsers block Facebook. <a href="${esc(url)}" target="_blank" rel="noopener">Open our Facebook page</a></p>`;
+}
+
 function renderAll(){
-  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderEventDetail();
-  if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); renderBlocked(); }
+  state.pendingRender = false;
+  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderEventDetail(); renderCampaigns(); renderFb(); renderStore();
+  if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); renderBlocked(); renderRes(); }
 }
 
 /* ---------- community board ---------- */
@@ -553,6 +778,13 @@ document.addEventListener("click", async ev => {
   if(t.dataset.edit){ state.editing = t.dataset.edit; renderBoard(); return; }
   if(t.dataset.editCancel){ state.editing = null; renderBoard(); return; }
   if(t.dataset.staff === "look") renderStoreForm();
+  if(t.dataset.resfilter){ state.resFilter = t.dataset.resfilter; renderRes(); return; }
+  if(t.dataset.reserve){ state.reserve = { sku:t.dataset.reserve, kind:t.dataset.kind }; renderHome(); renderShop(); return; }
+  if(t.dataset.reserveCancel){ state.reserve = null; renderHome(); renderShop(); return; }
+  if(t.dataset.more){ state.expandItem = state.expandItem === t.dataset.more ? null : t.dataset.more; state.photoCands = null; renderInventoryTable(); return; }
+  if(t.id === "dmOfferBtn"){ state.dmOpen = !state.dmOpen; state.editCamp = null; renderCampaigns(); if(state.dmOpen) document.getElementById("cf-title")?.focus(); return; }
+  if(t.dataset.editCamp){ state.editCamp = t.dataset.editCamp; renderCampaigns(); return; }
+  if(t.dataset.cancelCamp){ state.editCamp = null; state.dmOpen = false; renderCampaigns(); return; }
   if(t.dataset.staff){
     document.querySelectorAll("[data-staff]").forEach(b=>b.setAttribute("aria-pressed", b===t));
     document.querySelectorAll("[data-pane]").forEach(p=>p.hidden = p.dataset.pane!==t.dataset.staff);
@@ -636,10 +868,99 @@ document.addEventListener("click", async ev => {
     else if(t.id==="siSave"){
       const hours = {};
       DAYS.forEach(([k]) => { hours[k] = { open:document.querySelector(`[data-h-open="${k}"]`).value, close:document.querySelector(`[data-h-close="${k}"]`).value, closed:document.querySelector(`[data-h-closed="${k}"]`).checked }; });
-      const row = { address:$("#siAddress").value.trim(), phone:$("#siPhone").value.trim(), hours, hours_note:$("#siNote").value.trim() || null, updated_at:nowIso() };
+      let fbUrl = $("#siFb").value.trim();
+      if(fbUrl && !/^https:\/\/(www\.|m\.)?(facebook|fb)\.com\//i.test(fbUrl)){ toast("The Facebook link should start with https://www.facebook.com/"); return; }
+      const row = { address:$("#siAddress").value.trim(), phone:$("#siPhone").value.trim(), hours, hours_note:$("#siNote").value.trim() || null, facebook_url:fbUrl || null, updated_at:nowIso() };
       must(await sb.from("site_settings").update(row).eq("id", 1));
       state.store = { address:row.address, phone:row.phone, hours, note:row.hours_note || "" };
-      renderStore(); toast("Store info saved");
+      state.feat.fb = fbUrl; renderStore(); renderFb(); toast("Store info saved");
+    }
+    else if(t.dataset.reserveGo){
+      const it = state.inventory.find(x => x.sku === state.reserve.sku); if(!it) return;
+      const box = t.closest(".reserve-form"), get = id => box.querySelector("#" + id);
+      const qty = parseInt(get("rq-qty").value, 10) || 1;
+      const row = { kind:state.reserve.kind, sku:it.sku, qty };
+      if(state.user){ row.user_id = state.user.id; row.name = myName(); row.contact = state.user.email; }
+      else {
+        row.name = get("rq-name").value.trim(); row.contact = get("rq-contact").value.trim();
+        if(!row.name || !row.contact){ toast("Add your name and a phone or email so the store can reach you"); return; }
+      }
+      t.disabled = true;
+      try{ must(await sb.from("reservations").insert(row)); }
+      catch(e){ t.disabled = false; toast(String(e.message||"").replace(/^.*?:\s*/,"") || "That didn't go through. Try again."); return; }
+      state.reserve = null; await loadReservations(); renderAll();
+      toast(row.kind === "hold" ? "Hold requested! The store will set it aside." : "Preorder requested! The store will let you know when it's in.");
+    }
+    else if(t.dataset.resCancel){
+      if(confirm("Cancel this request?")){ must(await sb.rpc("cancel_my_reservation", { rid:t.dataset.resCancel })); await loadReservations(); renderAll(); toast("Request cancelled"); }
+    }
+    else if(t.dataset.resStatus){
+      if(t.dataset.to === "cancelled" && !confirm("Cancel this request?")) return;
+      must(await sb.from("reservations").update({ status:t.dataset.to }).eq("id", t.dataset.resStatus));
+      await loadReservations(); renderRes(); toast(t.dataset.to === "ready" ? "Marked ready" : t.dataset.to === "picked_up" ? "Marked picked up" : "Request cancelled");
+    }
+    else if(t.dataset.resDel){
+      if(confirm("Delete this request for good?")){ must(await sb.from("reservations").delete().eq("id", t.dataset.resDel)); await loadReservations(); renderRes(); }
+    }
+    else if(t.id==="featSave"){
+      must(await sb.from("site_settings").update({ holds_enabled:$("#featHolds").checked, preorders_enabled:$("#featPre").checked, updated_at:nowIso() }).eq("id", 1));
+      state.feat.holds = $("#featHolds").checked; state.feat.preorders = $("#featPre").checked; renderAll(); toast("Shop features saved");
+    }
+    else if(t.dataset.findphoto){
+      const it = state.inventory.find(x => x.sku === t.dataset.findphoto); if(!it) return;
+      if(!it.barcode){ toast("Add the barcode first, then try again"); return; }
+      state.photoCands = { sku:it.sku, loading:true }; renderInventoryTable();
+      const { data, error } = await sb.functions.invoke("photo-lookup", { body:{ action:"lookup", barcode:it.barcode } });
+      state.photoCands = error ? { sku:it.sku, note:"The photo finder isn't set up yet, or it had a problem. You can still upload a photo." } : { sku:it.sku, ...(data||{}) };
+      renderInventoryTable();
+    }
+    else if(t.dataset.pick){
+      t.disabled = true; toast("Saving photo...");
+      const { data, error } = await sb.functions.invoke("photo-lookup", { body:{ action:"save", sku:t.dataset.sku, imageUrl:t.dataset.pick } });
+      if(error || !data?.url){ t.disabled = false; toast(data?.error || "Couldn't save that photo. Try another one."); return; }
+      await setPhoto(t.dataset.sku, data.url); toast("Photo saved");
+    }
+    else if(t.dataset.rmphoto){
+      if(confirm("Remove this photo?")){ await setPhoto(t.dataset.rmphoto, null); toast("Photo removed"); }
+    }
+    else if(t.dataset.saveCamp){
+      const id = t.dataset.saveCamp, form = t.closest(".camp-form"), f = k => form.querySelector("#cf-" + k);
+      const row = { title:f("title").value.trim(), system:f("system").value.trim() || null, weekday:parseInt(f("day").value,10),
+        start_time:f("time").value, seats:Math.min(12, Math.max(1, parseInt(f("seats").value,10)||5)), level:f("level").value.trim() || null,
+        description:f("desc").value.trim() || null };
+      if(!row.title || !row.start_time){ toast("Add a campaign name and start time"); return; }
+      if(f("note")) row.note = f("note").value.trim() || null;
+      if(state.isStaff && f("dm")){ const dm = f("dm").value.trim(); row.dm_name = dm || myName(); if(id === "new") row.dm_user = (!dm || dm === myName()) ? state.user.id : null; }
+      if(id === "new"){
+        if(state.isStaff) row.status = "recruiting";
+        must(await sb.from("campaigns").insert(row));
+        state.dmOpen = false; await loadCampaigns(); renderAll();
+        toast(state.isStaff ? "Campaign added" : "Sent! The store will look it over.");
+      } else {
+        must(await sb.from("campaigns").update(row).eq("id", id));
+        state.editCamp = null; await loadCampaigns(); renderAll(); toast("Campaign updated");
+      }
+    }
+    else if(t.dataset.joinCamp){
+      t.disabled = true;
+      try{ must(await sb.from("campaign_members").insert({ campaign_id:t.dataset.joinCamp })); toast("You're in! See you at the table."); }
+      catch(e){ toast(String(e.message||"").includes("full") ? "That campaign just filled up" : "Couldn't join. Try again."); }
+      await loadCampaigns(); renderAll();
+    }
+    else if(t.dataset.leaveCamp){
+      if(confirm("Leave this campaign?")){ must(await sb.from("campaign_members").delete().eq("campaign_id", t.dataset.leaveCamp).eq("user_id", state.user.id)); await loadCampaigns(); renderAll(); toast("You left the campaign"); }
+    }
+    else if(t.dataset.kick){
+      if(confirm("Remove this player from the campaign?")){ must(await sb.from("campaign_members").delete().eq("campaign_id", t.dataset.kick).eq("user_id", t.dataset.user)); await loadCampaigns(); renderAll(); toast("Player removed"); }
+    }
+    else if(t.dataset.campStatus){
+      if(t.dataset.to === "ended" && !confirm("End this campaign? It'll be hidden from the Game nights page.")) return;
+      must(await sb.from("campaigns").update({ status:t.dataset.to }).eq("id", t.dataset.campStatus));
+      await loadCampaigns(); renderAll();
+      toast({ recruiting:"Campaign is open to players", full:"Closed to new players", ended:"Campaign ended" }[t.dataset.to] || "Saved");
+    }
+    else if(t.dataset.delCamp){
+      if(confirm("Remove this campaign for good?")){ must(await sb.from("campaigns").delete().eq("id", t.dataset.delCamp)); await loadCampaigns(); renderAll(); toast("Campaign removed"); }
     }
     else if(t.id==="forgotBtn"){
       const email = $("#loginEmail").value.trim();
@@ -665,7 +986,7 @@ document.addEventListener("click", async ev => {
     }
     else if(t.id==="csvDownload"){
       const q = v => { const x = String(v ?? ""); return /[",\n]/.test(x) ? `"${x.replace(/"/g,'""')}"` : x; };
-      const rows = [["sku","name","category","price","qty"], ...[...state.inventory].sort((a,b)=>a.name.localeCompare(b.name)).map(i => [i.sku, i.name, i.category, Number(i.price).toFixed(2), i.qty])];
+      const rows = [["sku","name","category","price","qty","barcode","preorder","release_date"], ...[...state.inventory].sort((a,b)=>a.name.localeCompare(b.name)).map(i => [i.sku, i.name, i.category, Number(i.price).toFixed(2), i.qty, i.barcode||"", i.preorder?"yes":"", i.release_date||""])];
       const blob = new Blob(["\uFEFF" + rows.map(r => r.map(q).join(",")).join("\r\n")], { type:"text/csv" });
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `titan-inventory-${today()}.csv`;
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -769,9 +1090,24 @@ document.addEventListener("change", async ev => {
     catch(e){ handleError(e); att.checked = !att.checked; }
     await loadRoster(); renderStaffEvents(); return;
   }
+  const upl = ev.target.closest("[data-upload]");
+  if(upl && sb && upl.files && upl.files[0]){
+    const sku = upl.dataset.upload; toast("Uploading photo...");
+    try{
+      const blob = await shrinkImage(upl.files[0]);
+      const path = `${sku.replace(/[^A-Za-z0-9_.-]/g,"-")}-${Date.now()}.jpg`;
+      const up = await sb.storage.from("product-photos").upload(path, blob, { contentType:"image/jpeg" });
+      if(up.error) throw up.error;
+      const { data } = sb.storage.from("product-photos").getPublicUrl(path);
+      await setPhoto(sku, data.publicUrl); toast("Photo saved");
+    }catch(e){ handleError(e); }
+    return;
+  }
   const fld = ev.target.closest("[data-field]");
   if(fld && sb){
-    const field = fld.dataset.field; let value = fld.value;
+    const field = fld.dataset.field; let value = fld.type === "checkbox" ? fld.checked : fld.value;
+    if(field === "barcode"){ value = value.replace(/[^0-9Xx]/g,"") || null; fld.value = value || ""; }
+    if(field === "release_date"){ value = value || null; }
     if(field === "name"){ value = value.trim(); if(!value){ toast("Name can't be empty"); renderInventoryTable(); return; } }
     if(field === "price"){ value = Math.max(0, parseFloat(value) || 0); fld.value = value.toFixed(2); }
     try{ must(await sb.from("products").update({ [field]:value, updated_at:nowIso() }).eq("sku", fld.dataset.sku)); toast("Saved"); }
@@ -791,8 +1127,9 @@ async function addItem(){
   const sku = skuSafe($("#niSku").value), name=$("#niName").value.trim();
   if(!sku || !name){ toast("Add a SKU and a name"); return; }
   if(state.inventory.some(i => i.sku === sku) && !confirm(`An item with SKU ${sku} already exists. Replace it?`)) return;
-  must(await sb.from("products").upsert({ sku, name, category:$("#niCat").value, price:parseFloat($("#niPrice").value)||0, qty:Math.max(0, parseInt($("#niQty").value,10)||0), updated_at:nowIso() }));
-  ["#niSku","#niName","#niPrice","#niQty"].forEach(s=>$(s).value="");
+  must(await sb.from("products").upsert({ sku, name, category:$("#niCat").value, price:parseFloat($("#niPrice").value)||0, qty:Math.max(0, parseInt($("#niQty").value,10)||0),
+    barcode:$("#niBarcode").value.replace(/[^0-9Xx]/g,"") || null, preorder:$("#niPreorder").checked, release_date:$("#niRelease").value || null, updated_at:nowIso() }));
+  ["#niSku","#niName","#niPrice","#niQty","#niBarcode","#niRelease"].forEach(s=>$(s).value=""); $("#niPreorder").checked = false;
   await loadProducts(); renderAll(); toast("Item added");
 }
 async function addEvent(){
@@ -863,6 +1200,11 @@ $("#csvFile").addEventListener("change", async ev => {
     let cat=(r[ix("category")]||"").trim().toLowerCase(); if(!CATS[cat]){ bad++; cat="accessories"; }
     const row = { sku:skuSafe(r[ix("sku")]), name:(r[ix("name")]||"").trim(), category:cat,
       price:parseFloat(String(r[ix("price")]).replace(/[$,]/g,""))||0, qty:Math.max(0, parseInt(r[ix("qty")],10)||0) };
+    // Optional columns: blank cells keep whatever the item already has
+    const old = state.inventory.find(x => x.sku === row.sku) || {};
+    if(ix("barcode") >= 0){ const b = String(r[ix("barcode")]||"").replace(/[^0-9Xx]/g,""); row.barcode = b || old.barcode || null; }
+    if(ix("preorder") >= 0){ const v = String(r[ix("preorder")]||"").trim().toLowerCase(); row.preorder = v ? ["yes","y","true","1","x"].includes(v) : !!old.preorder; }
+    if(ix("release_date") >= 0){ const v = String(r[ix("release_date")]||"").trim(); row.release_date = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : (old.release_date || null); }
     if(row.sku && row.name) bySku.set(row.sku, row);
   });
   pendingRows = [...bySku.values()];
@@ -877,13 +1219,40 @@ async function uploadCsv(btn){
   await loadProducts(); renderAll(); toast("Inventory uploaded");
 }
 
+/* ---------- live updates ---------- */
+// Don't redraw the page while someone is typing or editing. Catch up when they're done.
+function busy(){
+  const a = document.activeElement;
+  return (a && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) || !!(state.editEvent || state.editNews || state.reserve || state.editCamp || state.editing || state.dmOpen);
+}
+function softRender(){ if(busy()){ state.pendingRender = true; return; } renderAll(); }
+document.addEventListener("focusout", () => setTimeout(() => { if(state.pendingRender && !busy()) renderAll(); }, 400));
+function startLive(){
+  if(!sb || state.live) return;
+  const timers = {};
+  const later = (key, fn) => { clearTimeout(timers[key]); timers[key] = setTimeout(async () => { try{ await fn(); softRender(); }catch(e){ console.error(e); } }, 600); };
+  const on = (table, key, fn) => ch.on("postgres_changes", { event:"*", schema:"public", table }, () => later(key, fn));
+  const ch = sb.channel("titan-live");
+  on("products", "products", loadProducts);
+  on("events", "events", () => Promise.all([loadEvents(), loadCounts(), refreshDetail()]));
+  on("signups", "signups", () => Promise.all([loadCounts(), loadRoster(), loadMine(), refreshDetail()]));
+  on("announcements", "news", loadNews);
+  on("posts", "board", loadBoard);
+  on("replies", "board", loadBoard);
+  on("site_settings", "settings", loadSettings);
+  on("reservations", "res", loadReservations);
+  on("campaigns", "camps", loadCampaigns);
+  on("campaign_members", "camps", loadCampaigns);
+  state.live = ch.subscribe();
+}
+
 /* ---------- start up ---------- */
 route(); renderAll();
 if(sb){
   // Runs on page load and whenever someone logs in or out.
   sb.auth.onAuthStateChange((event) => {
     if(event === "PASSWORD_RECOVERY"){ state.recovery = true; location.hash = "#account"; }
-    setTimeout(async () => { await refreshStaff(); await loadAll(); route(); }, 0);
+    setTimeout(async () => { await refreshStaff(); await loadAll(); route(); startLive(); }, 0);
   });
   // Refresh when someone comes back to the tab.
   document.addEventListener("visibilitychange", () => { if(!document.hidden) loadAll(); });
