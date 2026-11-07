@@ -59,8 +59,8 @@ html[data-season="none"] header.top::after{display:none}
 
 /* falling snow for Christmas */
 #season-fx{position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden}
-#season-fx i{position:absolute;top:-12px;border-radius:50%;background:#FFFFFF;animation:titan-fall linear infinite}
-html[data-mode="light"] #season-fx i{background:#FFFFFF;box-shadow:0 0 0 1px rgba(90,120,150,.55),0 0 5px rgba(90,120,150,.45)}
+#season-fx i{position:absolute;top:-20px;border-radius:50%;background:#FFFFFF;animation:titan-fall linear infinite;font-size:0;font-style:normal;line-height:1}
+html[data-mode="light"] #season-fx i{background:none;width:auto!important;height:auto!important;font-size:calc(var(--s) * 3.6px);color:#5E8DB8;text-shadow:0 0 2px #FFFFFF}
 @keyframes titan-fall{to{transform:translate3d(var(--dx),105vh,0)}}
 
 .mode-btn{background:none;border:1px solid var(--h-line);color:var(--h-gold);border-radius:3px;padding:6px 10px;cursor:pointer;font-family:var(--display);font-size:13px;letter-spacing:.5px;white-space:nowrap}

@@ -43,7 +43,7 @@ function applySeason(s){
   try{ localStorage.setItem("titan-season", s); }catch(e){}
   $("#season-fx").innerHTML = SEASONS[s].snow ? Array.from({length:40}, () => {
     const size = (2 + Math.random()*4).toFixed(1);
-    return `<i style="left:${(Math.random()*100).toFixed(1)}%;width:${size}px;height:${size}px;opacity:${(0.4+Math.random()*0.5).toFixed(2)};animation-duration:${(9+Math.random()*10).toFixed(1)}s;animation-delay:-${(Math.random()*19).toFixed(1)}s;--dx:${Math.round(Math.random()*80-40)}px"></i>`;
+    return `<i style="--s:${size};left:${(Math.random()*100).toFixed(1)}%;width:${size}px;height:${size}px;opacity:${(0.4+Math.random()*0.5).toFixed(2)};animation-duration:${(9+Math.random()*10).toFixed(1)}s;animation-delay:-${(Math.random()*19).toFixed(1)}s;--dx:${Math.round(Math.random()*80-40)}px">❄</i>`;
   }).join("") : "";
   $("#seasonNote").textContent = SEASONS[s].note || "";
   $("#seasonSel").value = s;
