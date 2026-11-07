@@ -111,7 +111,7 @@ p{margin:0 0 12px;max-width:66ch}
 .btn.small{padding:3px 10px;font-size:13px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 label{display:block;font-weight:700;font-size:15px;margin-bottom:4px;color:var(--muted)}
-input[type=text],input[type=number],input[type=date],input[type=time],input[type=search],select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:3px;background:var(--paper);color:var(--ink)}
+input[type=text],input[type=password],input[type=number],input[type=date],input[type=time],input[type=search],select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:3px;background:var(--paper);color:var(--ink)}
 input::placeholder,textarea::placeholder{color:var(--placeholder)}
 input:focus,select:focus,textarea:focus{border-color:var(--gold);outline:none;box-shadow:0 0 0 3px rgba(217,168,69,.2)}
 input[type=checkbox]{accent-color:var(--red)}
@@ -184,3 +184,7 @@ footer{border-top:1px solid var(--line);padding:24px 20px;text-align:center;font
 }
 @media (max-width:480px){.grid2,.grid3{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}#season-fx{display:none}}
+
+/* account */
+.signed{color:var(--green);font-weight:700;margin:10px 0 6px}
+.mine-row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}

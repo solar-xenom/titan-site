@@ -30,6 +30,7 @@
       <a href="#events">Game nights</a>
       <a href="#news">Announcements</a>
       <a href="#staff" id="staffLink" hidden>Staff</a>
+      <a href="#account" id="accountLink">Log in</a>
     </nav>
     <button class="mode-btn" id="modeBtn" type="button"></button>
   </div>
@@ -100,28 +101,52 @@
     <div id="newsList"></div>
   </section>
 
+  <!-- ACCOUNT -->
+  <section class="view" id="view-account" hidden>
+    <h1>Your account</h1>
+    <div id="authArea" class="panel" style="max-width:460px">
+      <h3>Log in or create an account</h3>
+      <p class="note">An account lets you save your seat in one click, see your game nights, and cancel if plans change.</p>
+      <div class="field" id="nameField" hidden><label for="loginName">Your name</label><input type="text" id="loginName" maxlength="60" autocomplete="name"></div>
+      <div class="field"><label for="loginEmail">Email</label><input type="text" id="loginEmail" autocomplete="username"></div>
+      <div class="field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password"></div>
+      <div id="ageField" class="field" hidden>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;color:var(--ink)"><input type="checkbox" id="ageOk" style="margin-top:6px"> I'm 13 or older</label>
+        <p class="note" style="margin:4px 0 0">Under 13? Ask a parent to make an account and sign you up.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" id="loginBtn">Log in</button>
+        <button class="btn" id="signupBtn">Create account</button>
+      </div>
+      <p id="loginMsg" class="note" style="margin-top:10px"></p>
+    </div>
+
+    <div id="meArea" hidden>
+      <div class="panel" style="max-width:560px">
+        <h3>Profile</h3>
+        <p class="note" id="meEmail"></p>
+        <div class="field"><label for="meName">Display name</label><input type="text" id="meName" maxlength="60"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="meSave">Save name</button>
+          <button class="btn" id="logoutBtn">Log out</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>My game nights</h3>
+        <div id="myNights"></div>
+      </div>
+      <div class="panel" style="max-width:560px">
+        <h3>Staff</h3>
+        <div id="staffBox"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- STAFF -->
   <section class="view" id="view-staff" hidden>
     <h1>Staff</h1>
-    <div id="loginArea" class="panel" style="max-width:440px">
-      <h3>Staff login</h3>
-      <div class="field" id="nameField" hidden><label for="loginName">Your name</label><input type="text" id="loginName" maxlength="60" autocomplete="name"></div>
-      <div class="field"><label for="loginEmail">Email</label><input type="text" id="loginEmail" autocomplete="username"></div>
-      <div class="field"><label for="loginPass">Password</label><input type="password" id="loginPass" autocomplete="current-password" style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:3px;background:var(--paper);color:var(--ink)"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn primary" id="loginBtn">Log in</button>
-        <button class="btn" id="signupBtn">Create staff account</button>
-      </div>
-      <p class="note" style="margin-top:10px">New employees create an account here. The owner approves it before it can do anything.</p>
-      <p id="loginMsg" class="note" style="margin-top:6px"></p>
-    </div>
-    <div id="pendingArea" class="panel" style="max-width:480px" hidden>
-      <h3>Waiting for approval</h3>
-      <div id="pendingBody"></div>
-      <button class="btn small" id="logoutBtn2" style="margin-top:10px">Log out</button>
-    </div>
     <div id="staffArea" hidden>
-    <p style="margin-bottom:0"><span id="whoami" class="note"></span> <button class="btn small" id="logoutBtn">Log out</button></p>
+    <p id="whoami" class="note" style="margin-bottom:0"></p>
     <div class="staff-nav" role="tablist">
       <button class="chip" data-staff="inventory" aria-pressed="true">Inventory</button>
       <button class="chip" data-staff="events" aria-pressed="false">Game nights</button>
@@ -228,7 +253,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
   </section>
 </main>
 
-<footer><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#staff">Staff login</a></footer>
+<footer><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#account">Staff login</a></footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="config.js"></script>

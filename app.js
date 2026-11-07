@@ -6,7 +6,7 @@ const CATS = {
   dnd:{label:"D&D & RPGs"}, tcg:{label:"Trading cards"}, models:{label:"Model kits"},
   board:{label:"Board games"}, collectibles:{label:"Funko & collectibles"}, accessories:{label:"Dice, sleeves & supplies"}
 };
-const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, request:null, team:[], requests:[], shopCat:"all" };
+const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], request:null, team:[], requests:[], shopCat:"all" };
 const configured = !SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
 const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
@@ -57,17 +57,20 @@ applyMode(document.documentElement.getAttribute("data-mode") === "light" ? "ligh
 applySeason(document.documentElement.getAttribute("data-season") || "none");
 
 /* ---------- routing ---------- */
-const VIEWS = ["home","shop","events","news","staff"];
+const VIEWS = ["home","shop","events","news","account","staff"];
 function route(){
   let v = (location.hash||"").replace("#","") || "home";
   if(!VIEWS.includes(v)) v = "home";
+  if(v==="staff" && !state.isStaff) v = "account";
   VIEWS.forEach(n => { $("#view-"+n).hidden = n!==v; });
   document.querySelectorAll("nav.tabs a").forEach(a => {
     if(a.getAttribute("href")==="#"+v) a.setAttribute("aria-current","page"); else a.removeAttribute("aria-current");
   });
   $("#staffArea").hidden = !state.isStaff;
-  $("#loginArea").hidden = !!state.user;
-  $("#pendingArea").hidden = !state.user || state.isStaff;
+  $("#authArea").hidden = !!state.user;
+  $("#meArea").hidden = !state.user;
+  $("#accountLink").textContent = state.user ? "My account" : "Log in";
+  if(v==="account") document.querySelector('nav.tabs a[href="#account"]').setAttribute("aria-current","page");
   $("#teamChip").hidden = !state.isOwner;
   $("#lookChip").hidden = !state.isOwner;
   $("#csvPanel").hidden = !state.isOwner;
@@ -99,7 +102,7 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase key in config.js to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine()]);
     setStatus("");
   }catch(e){
     console.error(e);
@@ -109,31 +112,56 @@ async function loadAll(){
 }
 
 /* ---------- staff login ---------- */
+// Works out who is logged in, their profile, and whether they're staff.
 async function refreshStaff(){
-  state.isStaff = false; state.isOwner = false; state.request = null;
+  state.isStaff = false; state.isOwner = false; state.request = null; state.profile = null;
   const { data:{ session } } = await sb.auth.getSession();
   state.user = session ? session.user : null;
   if(state.user){
     const { data } = await sb.from("staff").select("role,name").eq("user_id", state.user.id).maybeSingle();
     state.isStaff = !!data;
     state.isOwner = data?.role === "owner";
-    if(data){
-      $("#whoami").textContent = `Logged in as ${data.name || state.user.email} (${data.role}).`;
-    } else {
+    if(!data){
       const req = await sb.from("staff_requests").select("*").eq("user_id", state.user.id).maybeSingle();
       state.request = req.data || null;
     }
+    // Every account gets a profile. Make one the first time someone logs in.
+    let prof = (await sb.from("profiles").select("*").eq("user_id", state.user.id).maybeSingle()).data;
+    if(!prof){
+      const display_name = (state.user.user_metadata?.name || data?.name || state.user.email.split("@")[0]).slice(0,60);
+      const made = await sb.from("profiles").upsert({ user_id:state.user.id, display_name }).select().maybeSingle();
+      prof = made.data || { display_name };
+    }
+    state.profile = prof;
+    $("#whoami").textContent = data ? `Logged in as ${data.name || prof.display_name} (${data.role}).` : "";
   }
   $("#staffLink").hidden = !state.isStaff;
-  renderPending();
+  renderAccount();
 }
-function renderPending(){
-  if(!state.user || state.isStaff){ $("#pendingBody").innerHTML = ""; return; }
-  $("#pendingBody").innerHTML = state.request
-    ? `<p>Thanks, ${esc(state.request.name)}. Your request is waiting for the owner to approve it. Check back after they've had a chance to look.</p>`
-    : `<p>You're logged in as ${esc(state.user.email)}, but this account isn't on the staff list. Ask the owner for access.</p>
-       <div class="field"><label for="reqName">Your name</label><input type="text" id="reqName" maxlength="60"></div>
-       <button class="btn primary" id="requestBtn">Request staff access</button>`;
+const myName = () => state.profile?.display_name || state.user?.email || "";
+
+async function loadMine(){
+  if(!state.user){ state.mine = []; return; }
+  const rows = must(await sb.from("signups").select("id, event_id, events(title, date, time, game)").eq("user_id", state.user.id));
+  state.mine = rows.filter(r => r.events && r.events.date >= today())
+    .sort((a,b) => (a.events.date + a.events.time).localeCompare(b.events.date + b.events.time));
+}
+
+function renderAccount(){
+  if(!state.user) return;
+  $("#meEmail").textContent = `Logged in as ${state.user.email}`;
+  if(document.activeElement !== $("#meName")) $("#meName").value = myName();
+  $("#myNights").innerHTML = state.mine.length ? state.mine.map(m => `
+    <div class="mine-row">
+      <div><span class="game-tag ${m.events.game}">${m.events.game==="dnd"?"D&D":"TCG"}</span><strong>${esc(m.events.title)}</strong>
+        <div class="note">${esc(fmtDate(m.events.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime((m.events.time||"").slice(0,5)))}</div></div>
+      <button class="btn small danger" data-cancel="${esc(m.id)}">Cancel my seat</button>
+    </div>`).join("") : `<p class="note">You're not signed up for anything yet. <a href="#events">See game nights</a></p>`;
+  $("#staffBox").innerHTML = state.isStaff
+    ? `<p>You're on staff as ${state.isOwner ? "an owner" : "an employee"}.</p><a class="btn small" href="#staff">Open the Staff page</a>`
+    : state.request
+      ? `<p class="note">Your staff request is waiting for the owner to approve it.</p>`
+      : `<p class="note">Work at Titan? Ask for staff access and the owner will approve it.</p><button class="btn small" id="requestBtn">Request staff access</button>`;
 }
 async function loadTeam(){
   if(!state.isOwner){ state.team = []; state.requests = []; return; }
@@ -212,11 +240,17 @@ function eventCard(e, staff){
     const r = rosterFor(e.id);
     html += r.length ? `<ol class="roster">${r.map(x=>`<li>${esc(x.name)}${x.contact?` <span class="muted">(${esc(x.contact)})</span>`:""} <button class="btn small danger" data-del-signup="${esc(x.id)}">Remove</button></li>`).join("")}</ol>` : `<p class="note" style="margin-top:8px">No sign-ups yet.</p>`;
     if(state.isOwner) html += `<button class="btn small danger" data-del-event="${esc(e.id)}" style="margin-top:8px">Delete game night</button>`;
+  } else if(state.mine.find(m => m.event_id === e.id)){
+    const m = state.mine.find(x => x.event_id === e.id);
+    html += `<p class="signed">✓ You're signed up</p><button class="btn small" data-cancel="${esc(m.id)}">Cancel my seat</button>`;
+  } else if(!full && state.user){
+    html += `<p style="margin:10px 0 0"><button class="btn primary" data-join="${esc(e.id)}">Save my seat as ${esc(myName())}</button></p>`;
   } else if(!full){
     html += `<form class="signup-form" data-signup="${esc(e.id)}">
       <input type="text" name="name" placeholder="Your name" required maxlength="60" aria-label="Your name">
       <input type="text" name="contact" placeholder="Phone or email (optional)" maxlength="80" aria-label="Phone or email">
-      <button class="btn primary" type="submit">Save my seat</button></form>`;
+      <button class="btn primary" type="submit">Save my seat</button></form>
+      <p class="note" style="margin:6px 0 0"><a href="#account">Log in</a> for one-click sign-ups.</p>`;
   } else {
     html += `<p class="note" style="margin-top:8px">This night is full. Ask at the counter about the waitlist.</p>`;
   }
@@ -255,7 +289,7 @@ function renderStaffEvents(){
 function renderStaffNews(){ $("#staffNews").innerHTML = sortedNews().map(p=>postHtml(p,true)).join(""); }
 
 function renderAll(){
-  renderHome(); renderShop(); renderEvents(); renderNews();
+  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount();
   if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); }
 }
 
@@ -278,14 +312,36 @@ document.addEventListener("click", async ev => {
     }
     else if(t.id==="signupBtn"){
       const nf = $("#nameField");
-      if(nf.hidden){ nf.hidden = false; $("#loginName").focus(); $("#loginMsg").textContent = "Enter your name, email, and a password, then click Create staff account again."; return; }
+      if(nf.hidden){ nf.hidden = false; $("#ageField").hidden = false; $("#loginName").focus(); $("#loginMsg").textContent = "Enter your name, email, and a password, then click Create account again."; return; }
       const name = $("#loginName").value.trim(), email = $("#loginEmail").value.trim(), password = $("#loginPass").value;
       if(!name || !email || password.length < 6){ $("#loginMsg").textContent = "Fill in your name, email, and a password of at least 6 characters."; return; }
-      const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ name } } });
+      if(!$("#ageOk").checked){ $("#loginMsg").textContent = "Please confirm you're 13 or older. Younger players can have a parent sign them up."; return; }
+      const { data, error } = await sb.auth.signUp({ email, password, options:{ data:{ name, age_ok:true } } });
       if(error){ $("#loginMsg").textContent = error.message; return; }
       if(!data.session){ $("#loginMsg").textContent = "Check your email to confirm your account, then come back and log in."; return; }
-      must(await sb.from("staff_requests").insert({ user_id:data.user.id, name, email }));
-      await refreshStaff(); route();
+      $("#loginMsg").textContent = ""; toast(`Welcome, ${name}!`);
+    }
+    else if(t.id==="meSave"){
+      const name = $("#meName").value.trim(); if(!name){ toast("Add a name"); return; }
+      state.profile = must(await sb.from("profiles").update({ display_name:name.slice(0,60) }).eq("user_id", state.user.id).select().single());
+      renderAll(); toast("Name saved");
+    }
+    else if(t.dataset.join){
+      t.disabled = true;
+      try{
+        must(await sb.from("signups").insert({ event_id:t.dataset.join, name:myName(), contact:state.user.email, user_id:state.user.id }));
+        toast("You're signed up. See you there!");
+      }catch(e){
+        const msg = String(e.message||"");
+        toast(msg.includes("full") ? "That night just filled up" : msg.includes("duplicate") ? "You're already signed up" : "Sign-up didn't go through. Try again.");
+      }
+      await Promise.all([loadMine(), loadCounts()]); renderAll();
+    }
+    else if(t.dataset.cancel){
+      if(confirm("Cancel your seat for this game night?")){
+        must(await sb.from("signups").delete().eq("id", t.dataset.cancel));
+        await Promise.all([loadMine(), loadCounts(), loadRoster()]); renderAll(); toast("Your seat is cancelled");
+      }
     }
     else if(t.id==="seasonSave"){
       const v = $("#seasonSel").value;
@@ -293,9 +349,8 @@ document.addEventListener("click", async ev => {
       applySeason(v); toast(`Theme set to ${SEASONS[v].label}`);
     }
     else if(t.id==="requestBtn"){
-      const name = $("#reqName").value.trim(); if(!name){ toast("Add your name"); return; }
-      must(await sb.from("staff_requests").insert({ user_id:state.user.id, name, email:state.user.email }));
-      await refreshStaff(); route();
+      must(await sb.from("staff_requests").insert({ user_id:state.user.id, name:myName(), email:state.user.email }));
+      await refreshStaff(); route(); toast("Request sent to the owner");
     }
     else if(t.dataset.approve){
       const r = state.requests.find(x => x.user_id === t.dataset.approve);
@@ -309,7 +364,7 @@ document.addEventListener("click", async ev => {
     else if(t.dataset.removeStaff){
       if(confirm("Remove this person from staff? They'll lose access right away.")){ must(await sb.from("staff").delete().eq("user_id", t.dataset.removeStaff)); await loadTeam(); renderTeam(); toast("Removed from staff"); }
     }
-    else if(t.id==="logoutBtn" || t.id==="logoutBtn2"){ await sb.auth.signOut(); location.hash = "#home"; }
+    else if(t.id==="logoutBtn"){ await sb.auth.signOut(); location.hash = "#home"; toast("Logged out"); }
     else if(t.dataset.delItem){ if(confirm("Delete this item from inventory?")){ must(await sb.from("products").delete().eq("sku", t.dataset.delItem)); await loadProducts(); renderAll(); toast("Item deleted"); } }
     else if(t.dataset.delEvent){ if(confirm("Delete this game night and its sign-ups?")){ must(await sb.from("events").delete().eq("id", t.dataset.delEvent)); await Promise.all([loadEvents(), loadRoster(), loadCounts()]); renderAll(); toast("Game night deleted"); } }
     else if(t.dataset.delSignup){ must(await sb.from("signups").delete().eq("id", t.dataset.delSignup)); await Promise.all([loadRoster(), loadCounts()]); renderAll(); toast("Sign-up removed"); }
