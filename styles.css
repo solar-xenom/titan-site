@@ -188,3 +188,22 @@ footer{border-top:1px solid var(--line);padding:24px 20px;text-align:center;font
 /* account */
 .signed{color:var(--green);font-weight:700;margin:10px 0 6px}
 .mine-row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+
+/* community board */
+.bpost{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--gold);padding:16px 18px;margin-bottom:14px;max-width:820px}
+.bpost.lfp{border-left-color:var(--red)}
+.bpost.lfg{border-left-color:var(--blue)}
+.bpost.closed{opacity:.7}
+.bpost h3{margin:6px 0 2px}
+.bpost .byline{font-size:15px;color:var(--muted);font-style:italic;margin-bottom:8px}
+.bpost .body{white-space:pre-wrap}
+.pill{display:inline-block;font-size:13px;font-weight:700;padding:1px 8px;border:1px solid var(--line);border-radius:999px;margin-right:6px;color:var(--muted)}
+.pill.kind{border-color:var(--gold);color:var(--gold)}
+.pill.closed{border-color:var(--red-soft);color:var(--red-soft)}
+.bactions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.replies{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+.replies summary{cursor:pointer;font-weight:700;color:var(--muted)}
+.reply{padding:8px 0 8px 12px;border-left:2px solid var(--line);margin:8px 0}
+.reply .byline{margin-bottom:2px}
+.reply-form{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.reply-form textarea{flex:1 1 260px}

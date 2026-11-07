@@ -29,6 +29,7 @@
       <a href="#shop">Shop</a>
       <a href="#events">Game nights</a>
       <a href="#news">Announcements</a>
+      <a href="#board">Community</a>
       <a href="#staff" id="staffLink" hidden>Staff</a>
       <a href="#account" id="accountLink">Log in</a>
     </nav>
@@ -99,6 +100,32 @@
   <section class="view" id="view-news" hidden>
     <h1>Announcements</h1>
     <div id="newsList"></div>
+  </section>
+
+  <!-- COMMUNITY BOARD -->
+  <section class="view" id="view-board" hidden>
+    <h1>Community board</h1>
+    <p class="muted">Find players for your campaign, a pod for Commander night, or just talk shop.</p>
+
+    <div id="boardLogin" class="panel" style="max-width:560px"><p style="margin:0"><a href="#account">Log in or make an account</a> to post or reply.</p></div>
+    <div id="boardNew" class="panel" style="max-width:720px" hidden>
+      <h3>New post</h3>
+      <div class="grid2">
+        <div class="field"><label for="npKind">Type</label><select id="npKind"></select></div>
+        <div class="field"><label for="npGame">Game</label><select id="npGame"></select></div>
+      </div>
+      <div class="field"><label for="npTitle">Title</label><input type="text" id="npTitle" maxlength="100" placeholder="Need 2 more for a Tuesday night campaign"></div>
+      <div class="field"><label for="npBody">Details</label><textarea id="npBody" rows="4" maxlength="2000" placeholder="What you're playing, experience level, which nights work for you"></textarea></div>
+      <button class="btn primary" id="postBtn">Post</button>
+      <p class="note" style="margin-top:10px">Be kind. Don't post phone numbers or addresses. Reply here and meet up at the store. Staff can remove posts that break the rules.</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="chips" id="boardKinds"></div>
+      <select id="bGame" aria-label="Filter by game" style="max-width:220px"></select>
+      <label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:600"><input type="checkbox" id="bClosed"> Show closed posts</label>
+    </div>
+    <div id="boardList"></div>
   </section>
 
   <!-- ACCOUNT -->

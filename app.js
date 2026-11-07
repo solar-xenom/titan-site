@@ -6,7 +6,7 @@ const CATS = {
   dnd:{label:"D&D & RPGs"}, tcg:{label:"Trading cards"}, models:{label:"Model kits"},
   board:{label:"Board games"}, collectibles:{label:"Funko & collectibles"}, accessories:{label:"Dice, sleeves & supplies"}
 };
-const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], request:null, team:[], requests:[], shopCat:"all" };
+const state = { inventory:[], events:[], counts:{}, roster:[], news:[], isStaff:false, isOwner:false, user:null, profile:null, mine:[], posts:[], replies:[], bKind:"all", editing:null, request:null, team:[], requests:[], shopCat:"all" };
 const configured = !SUPABASE_ANON_KEY.includes("YOUR-ANON-KEY");
 const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
@@ -57,7 +57,7 @@ applyMode(document.documentElement.getAttribute("data-mode") === "light" ? "ligh
 applySeason(document.documentElement.getAttribute("data-season") || "none");
 
 /* ---------- routing ---------- */
-const VIEWS = ["home","shop","events","news","account","staff"];
+const VIEWS = ["home","shop","events","news","board","account","staff"];
 function route(){
   let v = (location.hash||"").replace("#","") || "home";
   if(!VIEWS.includes(v)) v = "home";
@@ -102,7 +102,7 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase key in config.js to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadBoard()]);
     setStatus("");
   }catch(e){
     console.error(e);
@@ -289,15 +289,83 @@ function renderStaffEvents(){
 function renderStaffNews(){ $("#staffNews").innerHTML = sortedNews().map(p=>postHtml(p,true)).join(""); }
 
 function renderAll(){
-  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount();
+  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard();
   if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); }
 }
+
+/* ---------- community board ---------- */
+const KINDS = { lfp:"Looking for players", lfg:"Looking for a group", talk:"Discussion" };
+const GAMES = { dnd:"D&D / RPG", pokemon:"Pokémon", magic:"Magic", tcg_other:"Other card game", board:"Board games", models:"Model kits", other:"Other" };
+$("#npKind").innerHTML = Object.entries(KINDS).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+$("#npGame").innerHTML = Object.entries(GAMES).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+$("#bGame").innerHTML = `<option value="all">All games</option>` + Object.entries(GAMES).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+
+function timeAgo(iso){
+  const sec = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  const steps = [[60,"second"],[60,"minute"],[24,"hour"],[7,"day"],[4.35,"week"],[12,"month"],[Infinity,"year"]];
+  let n = sec;
+  for(const [size,unit] of steps){ if(n < size){ n = Math.floor(n); return `${n} ${unit}${n===1?"":"s"} ago`; } n /= size; }
+}
+async function loadBoard(){
+  state.posts = must(await sb.from("posts").select("*").order("created_at", { ascending:false }).limit(200));
+  const ids = state.posts.map(p => p.id);
+  state.replies = ids.length ? must(await sb.from("replies").select("*").in("post_id", ids).order("created_at")) : [];
+}
+function renderBoard(){
+  $("#boardLogin").hidden = !!state.user;
+  $("#boardNew").hidden = !state.user;
+  $("#boardKinds").innerHTML = [["all","All posts"], ...Object.entries(KINDS)]
+    .map(([k,l]) => `<button class="chip" data-bkind="${k}" aria-pressed="${state.bKind===k}">${esc(l)}</button>`).join("");
+  const game = $("#bGame").value || "all", showClosed = $("#bClosed").checked;
+  const list = state.posts.filter(p =>
+    (state.bKind==="all" || p.kind===state.bKind) && (game==="all" || p.game===game) && (showClosed || p.status==="open"));
+  $("#boardList").innerHTML = list.length ? list.map(postCard).join("") :
+    `<div class="empty">${state.posts.length ? "No posts match those filters." : "No posts yet. Be the first to find your party!"}</div>`;
+}
+function postCard(p){
+  const mine = state.user && p.user_id === state.user.id;
+  const canRemove = mine || state.isStaff;
+  const reps = state.replies.filter(r => r.post_id === p.id);
+  if(state.editing === p.id){
+    return `<article class="bpost ${p.kind}">
+      <div class="grid2">
+        <div class="field"><label>Type</label><select id="ed-kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${p.kind===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
+        <div class="field"><label>Game</label><select id="ed-game">${Object.entries(GAMES).map(([k,v])=>`<option value="${k}" ${p.game===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label>Title</label><input type="text" id="ed-title" maxlength="100" value="${esc(p.title)}"></div>
+      <div class="field"><label>Details</label><textarea id="ed-body" rows="4" maxlength="2000">${esc(p.body)}</textarea></div>
+      <div class="bactions"><button class="btn small primary" data-edit-save="${esc(p.id)}">Save</button><button class="btn small" data-edit-cancel="1">Cancel</button></div>
+    </article>`;
+  }
+  return `<article class="bpost ${p.kind} ${p.status==="closed"?"closed":""}">
+    <span class="pill kind">${esc(KINDS[p.kind]||"Post")}</span><span class="pill">${esc(GAMES[p.game]||"Other")}</span>${p.status==="closed"?'<span class="pill closed">Closed</span>':""}
+    <h3>${esc(p.title)}</h3>
+    <div class="byline">${esc(p.author_name)}, ${esc(timeAgo(p.created_at))}${p.updated_at && p.updated_at !== p.created_at ? " (edited)" : ""}</div>
+    <div class="body">${esc(p.body)}</div>
+    ${canRemove ? `<div class="bactions">
+      ${mine ? `<button class="btn small" data-edit="${esc(p.id)}">Edit</button>
+      <button class="btn small" data-status="${esc(p.id)}" data-to="${p.status==="open"?"closed":"open"}">${p.status==="open" ? (p.kind==="talk" ? "Close" : "Found them, close post") : "Reopen"}</button>` : ""}
+      <button class="btn small danger" data-del-post="${esc(p.id)}">${mine ? "Delete" : "Remove (staff)"}</button></div>` : ""}
+    <details class="replies" ${reps.length && reps.length <= 3 ? "open" : ""}>
+      <summary>${reps.length ? `${reps.length} repl${reps.length===1?"y":"ies"}` : "Reply"}</summary>
+      ${reps.map(r => `<div class="reply"><div class="byline">${esc(r.author_name)}, ${esc(timeAgo(r.created_at))}</div><div class="body">${esc(r.body)}</div>
+        ${(state.user && r.user_id===state.user.id) || state.isStaff ? `<button class="btn small danger" data-del-reply="${esc(r.id)}" style="margin-top:4px">${state.user && r.user_id===state.user.id ? "Delete" : "Remove (staff)"}</button>` : ""}</div>`).join("")}
+      ${state.user ? (p.status==="open" ? `<div class="reply-form"><textarea id="reply-${esc(p.id)}" rows="2" maxlength="1000" placeholder="Write a reply" aria-label="Write a reply"></textarea><button class="btn small primary" data-reply="${esc(p.id)}">Reply</button></div>` : `<p class="note">This post is closed.</p>`)
+        : `<p class="note"><a href="#account">Log in</a> to reply.</p>`}
+    </details>
+  </article>`;
+}
+$("#bGame").addEventListener("change", renderBoard);
+$("#bClosed").addEventListener("change", renderBoard);
 
 /* ---------- clicks ---------- */
 document.addEventListener("click", async ev => {
   const t = ev.target.closest("button, a");
   if(!t) return;
   if(t.dataset.cat !== undefined){ state.shopCat = t.dataset.cat; renderShop(); return; }
+  if(t.dataset.bkind){ state.bKind = t.dataset.bkind; renderBoard(); return; }
+  if(t.dataset.edit){ state.editing = t.dataset.edit; renderBoard(); return; }
+  if(t.dataset.editCancel){ state.editing = null; renderBoard(); return; }
   if(t.dataset.staff){
     document.querySelectorAll("[data-staff]").forEach(b=>b.setAttribute("aria-pressed", b===t));
     document.querySelectorAll("[data-pane]").forEach(p=>p.hidden = p.dataset.pane!==t.dataset.staff);
@@ -320,6 +388,41 @@ document.addEventListener("click", async ev => {
       if(error){ $("#loginMsg").textContent = error.message; return; }
       if(!data.session){ $("#loginMsg").textContent = "Check your email to confirm your account, then come back and log in."; return; }
       $("#loginMsg").textContent = ""; toast(`Welcome, ${name}!`);
+    }
+    else if(t.id==="postBtn"){
+      const title = $("#npTitle").value.trim(), body = $("#npBody").value.trim();
+      if(!title || !body){ toast("Add a title and some details"); return; }
+      t.disabled = true;
+      try{
+        must(await sb.from("posts").insert({ kind:$("#npKind").value, game:$("#npGame").value, title, body }));
+        $("#npTitle").value = ""; $("#npBody").value = "";
+        await loadBoard(); renderBoard(); toast("Posted!");
+      } finally { t.disabled = false; }
+    }
+    else if(t.dataset.editSave){
+      const title = $("#ed-title").value.trim(), body = $("#ed-body").value.trim();
+      if(!title || !body){ toast("Add a title and some details"); return; }
+      must(await sb.from("posts").update({ kind:$("#ed-kind").value, game:$("#ed-game").value, title, body }).eq("id", t.dataset.editSave));
+      state.editing = null; await loadBoard(); renderBoard(); toast("Post updated");
+    }
+    else if(t.dataset.status){
+      must(await sb.from("posts").update({ status:t.dataset.to }).eq("id", t.dataset.status));
+      await loadBoard(); renderBoard(); toast(t.dataset.to==="closed" ? "Post closed" : "Post reopened");
+    }
+    else if(t.dataset.delPost){
+      if(confirm("Delete this post and its replies?")){ must(await sb.from("posts").delete().eq("id", t.dataset.delPost)); await loadBoard(); renderBoard(); toast("Post deleted"); }
+    }
+    else if(t.dataset.reply){
+      const box = document.getElementById("reply-" + t.dataset.reply), body = box.value.trim();
+      if(!body) return;
+      t.disabled = true;
+      try{
+        must(await sb.from("replies").insert({ post_id:t.dataset.reply, body }));
+        await loadBoard(); renderBoard(); toast("Reply posted");
+      } finally { t.disabled = false; }
+    }
+    else if(t.dataset.delReply){
+      if(confirm("Delete this reply?")){ must(await sb.from("replies").delete().eq("id", t.dataset.delReply)); await loadBoard(); renderBoard(); toast("Reply deleted"); }
     }
     else if(t.id==="meSave"){
       const name = $("#meName").value.trim(); if(!name){ toast("Add a name"); return; }
