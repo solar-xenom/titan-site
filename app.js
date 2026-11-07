@@ -33,7 +33,7 @@ function applyMode(m){
   document.documentElement.setAttribute("data-mode", m);
   try{ localStorage.setItem("titan-mode", m); }catch(e){}
   const b = $("#modeBtn");
-  b.textContent = m === "dark" ? "☀ Light" : "☾ Dark";
+  b.innerHTML = m === "dark" ? `☀<span class="mode-label"> Light</span>` : `☾<span class="mode-label"> Dark</span>`;
   b.setAttribute("aria-label", m === "dark" ? "Switch to light mode" : "Switch to dark mode");
 }
 function applySeason(s){
@@ -58,7 +58,9 @@ applySeason(document.documentElement.getAttribute("data-season") || "none");
 
 /* ---------- routing ---------- */
 const VIEWS = ["home","shop","events","news","board","account","staff"];
+function closeMenu(){ document.querySelector("header.top").classList.remove("open"); $("#menuBtn").setAttribute("aria-expanded","false"); }
 function route(){
+  closeMenu();
   let v = (location.hash||"").replace("#","") || "home";
   if(!VIEWS.includes(v)) v = "home";
   if(v==="staff" && !state.isStaff) v = "account";
@@ -180,11 +182,11 @@ function renderTeam(){
       </div></div>`).join("") : `<p class="note">No one is waiting.</p>`;
   $("#teamTable").innerHTML = state.team.sort((a,b)=>(a.name||a.email||"").localeCompare(b.name||b.email||"")).map(m => {
     const me = m.user_id === state.user?.id;
-    return `<tr><td><input type="text" value="${esc(m.name||"")}" placeholder="Add a name" maxlength="60" data-setname="${esc(m.user_id)}" aria-label="Name" style="max-width:220px">${me?' <span class="note">(you)</span>':""}</td><td>${esc(m.email||"")}</td>
-      <td>${me ? esc(m.role) : `<select data-setrole="${esc(m.user_id)}" aria-label="Role for ${esc(m.name||m.email||"staff")}">
+    return `<tr><td data-label="Name"><input type="text" value="${esc(m.name||"")}" placeholder="Add a name" maxlength="60" data-setname="${esc(m.user_id)}" aria-label="Name" style="max-width:220px">${me?' <span class="note">(you)</span>':""}</td><td data-label="Email">${esc(m.email||"")}</td>
+      <td data-label="Role">${me ? esc(m.role) : `<select data-setrole="${esc(m.user_id)}" aria-label="Role for ${esc(m.name||m.email||"staff")}">
         <option value="employee" ${m.role==="employee"?"selected":""}>Employee</option>
         <option value="owner" ${m.role==="owner"?"selected":""}>Owner</option></select>`}</td>
-      <td>${me ? "" : `<button class="btn small danger" data-remove-staff="${esc(m.user_id)}">Remove</button>`}</td></tr>`;
+      <td class="act">${me ? "" : `<button class="btn small danger" data-remove-staff="${esc(m.user_id)}">Remove</button>`}</td></tr>`;
   }).join("");
 }
 
@@ -278,9 +280,9 @@ function renderInventoryTable(){
   const q = $("#invSearch").value.trim().toLowerCase();
   const list = state.inventory.filter(i => !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q))
     .sort((a,b)=>a.name.localeCompare(b.name));
-  $("#invTable").innerHTML = list.length ? list.map(i => `<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td>${esc(CATS[i.category]?.label||i.category)}</td>
-    <td class="num">${money(i.price)}</td><td class="num"><input type="number" min="0" value="${i.qty}" data-qty="${esc(i.sku)}" aria-label="Quantity for ${esc(i.name)}"></td>
-    <td>${state.isOwner?`<button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button>`:""}</td></tr>`).join("") :
+  $("#invTable").innerHTML = list.length ? list.map(i => `<tr><td data-label="SKU">${esc(i.sku)}</td><td data-label="Name">${esc(i.name)}</td><td data-label="Category">${esc(CATS[i.category]?.label||i.category)}</td>
+    <td class="num" data-label="Price">${money(i.price)}</td><td class="num" data-label="Qty"><input type="number" min="0" value="${i.qty}" data-qty="${esc(i.sku)}" aria-label="Quantity for ${esc(i.name)}"></td>
+    <td class="act">${state.isOwner?`<button class="btn small danger" data-del-item="${esc(i.sku)}">Delete</button>`:""}</td></tr>`).join("") :
     `<tr><td colspan="6" class="muted">No items yet. Upload a CSV or add one above.</td></tr>`;
 }
 function renderStaffEvents(){
@@ -362,6 +364,8 @@ $("#bClosed").addEventListener("change", renderBoard);
 document.addEventListener("click", async ev => {
   const t = ev.target.closest("button, a");
   if(!t) return;
+  if(t.id==="menuBtn"){ const h=document.querySelector("header.top"); const open=!h.classList.contains("open"); h.classList.toggle("open", open); t.setAttribute("aria-expanded", String(open)); return; }
+  if(t.closest("nav.tabs")) closeMenu();
   if(t.dataset.cat !== undefined){ state.shopCat = t.dataset.cat; renderShop(); return; }
   if(t.dataset.bkind){ state.bKind = t.dataset.bkind; renderBoard(); return; }
   if(t.dataset.edit){ state.editing = t.dataset.edit; renderBoard(); return; }

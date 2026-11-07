@@ -24,7 +24,8 @@
 <header class="top">
   <div class="top-inner">
     <a class="logo" href="#home"><svg viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"><polygon points="50,4 92,28 92,72 50,96 8,72 8,28"/><polygon points="50,24 76,66 24,66"/><path d="M50 4 50 24M92 28 76 66M92 72 76 66M50 96 76 66M50 96 24 66M8 72 24 66M8 28 24 66M8 28 50 24M92 28 50 24"/></svg><span>TITAN<small>Game and Hobby</small></span></a>
-    <nav class="tabs" aria-label="Main">
+    <button class="menu-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="mainNav"><span class="bars" aria-hidden="true"></span>Menu</button>
+    <nav class="tabs" id="mainNav" aria-label="Main">
       <a href="#home">Home</a>
       <a href="#shop">Shop</a>
       <a href="#events">Game nights</a>
@@ -199,7 +200,7 @@
       <div class="panel">
         <h3>Current staff</h3>
         <p class="note">Owners can do everything. Employees can post game nights and announcements, update stock, and remove sign-ups, but can't delete items, game nights, or announcements, upload a full CSV, or manage staff.</p>
-        <div class="table-wrap"><table>
+        <div class="table-wrap"><table class="stack">
           <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
           <tbody id="teamTable"></tbody>
         </table></div>
@@ -234,7 +235,7 @@ DND-PHB24,Player's Handbook (2024),dnd,49.95,3</div>
       <div class="panel">
         <h3>Stock on hand</h3>
         <input type="search" id="invSearch" placeholder="Filter" aria-label="Filter inventory" style="max-width:280px;margin-bottom:10px">
-        <div class="table-wrap"><table>
+        <div class="table-wrap"><table class="stack">
           <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th class="num">Price</th><th class="num">Qty</th><th></th></tr></thead>
           <tbody id="invTable"></tbody>
         </table></div>
