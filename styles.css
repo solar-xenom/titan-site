@@ -401,3 +401,64 @@ tr.item-more td{background:var(--raised)}
 .tag-img.ph{background:var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%235A4A3A' stroke-width='3' stroke-linejoin='round'%3E%3Cpolygon points='50,4 92,28 92,72 50,96 8,72 8,28'/%3E%3Cpolygon points='50,24 76,66 24,66'/%3E%3Cpath d='M50 4 50 24M92 28 76 66M92 72 76 66M50 96 76 66M50 96 24 66M8 72 24 66M8 28 24 66M8 28 50 24M92 28 50 24'/%3E%3C/svg%3E") center/38% no-repeat}
 html[data-mode="light"] .tag-img.ph{background:var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%23CDB48C' stroke-width='3' stroke-linejoin='round'%3E%3Cpolygon points='50,4 92,28 92,72 50,96 8,72 8,28'/%3E%3Cpolygon points='50,24 76,66 24,66'/%3E%3Cpath d='M50 4 50 24M92 28 76 66M92 72 76 66M50 96 76 66M50 96 24 66M8 72 24 66M8 28 24 66M8 28 50 24M92 28 50 24'/%3E%3C/svg%3E") center/38% no-repeat}
 .camp .bar i{background:var(--red)}
+
+/* ---------- game tiles on the homepage ---------- */
+.game-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:18px}
+.game-tile{display:flex;flex-direction:column;gap:2px;padding:14px 16px;text-decoration:none;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-left:6px solid var(--gc,var(--gold));transition:transform .12s ease, box-shadow .12s ease}
+.game-tile:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--gc,var(--gold))}
+.game-tile .gt-name{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:.5px;color:var(--ink)}
+.game-tile .gt-sub{font-size:14px;color:var(--muted);font-style:italic}
+.game-tile.shop-all{grid-column:1 / -1;border-left-color:var(--gold);background:transparent;border-style:dashed}
+.game-tile.shop-all .gt-name{color:var(--gold)}
+
+/* ---------- game tags and filters ---------- */
+.ev-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
+.ev-tags .game-tag{margin-right:0}
+.game-chip[aria-pressed="true"]{background:var(--gc);border-color:var(--gc);color:var(--gi)}
+.game-chip{border-left:4px solid var(--gc)}
+.ev-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;align-items:start}
+.ev-list .ev-card{margin-bottom:0}
+
+/* ---------- a game's page ---------- */
+.hub-head{position:relative;padding:22px 24px 20px;margin:-6px 0 26px;background:var(--surface);border:1px solid var(--line);border-top:8px solid var(--gc)}
+.hub-head::after{content:"";position:absolute;inset:0;background:linear-gradient(120deg, color-mix(in srgb,var(--gc) 16%,transparent), transparent 60%);pointer-events:none}
+.hub-head > *{position:relative;z-index:1}
+.hub-head .crumb{margin:0 0 6px;font-size:15px}
+.hub-head h1{margin:0 0 6px}
+.hub-blurb{font-size:19px;color:var(--muted);font-style:italic;margin:0}
+.hub-sec{margin:0 0 34px}
+.hub-sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.hub-sec-head h2{margin:0}
+.hub-sec-head a{font-weight:700;text-decoration:none}
+.hub-sec-head a:hover{text-decoration:underline}
+.hub-camps{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.hub-posts{display:grid;gap:8px;max-width:820px}
+.hub-post{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);text-decoration:none;color:var(--ink)}
+.hub-post:hover{border-color:var(--gold)}
+.hub-post .note{margin-left:auto}
+
+/* ---------- games manager ---------- */
+.games-edit input[type=color]{width:48px;height:34px;padding:2px;border:1px solid var(--line);background:var(--paper);cursor:pointer}
+.games-edit input[type=checkbox]{width:18px;height:18px}
+tr.game-blurb-row td{padding-top:0;background:var(--raised)}
+
+@media (max-width:820px){ .ev-list,.hub-camps{grid-template-columns:1fr} }
+@media (max-width:600px){
+  .game-tiles{grid-template-columns:1fr 1fr}
+  .game-tile{padding:12px}
+  .game-tile .gt-name{font-size:17px}
+  .hub-head{padding:18px 16px}
+  table.stack tr.game-blurb-row td{display:block;text-align:left}
+  table.stack tr.game-blurb-row td::before{display:none}
+}
+.game-tile.shop-all{border-left-style:solid}
+
+/* fold-up staff forms */
+.panel[data-fold]:not(.open) > :not(.fold-head){display:none!important}
+.panel[data-fold]:not(.open) > .fold-head{margin:0}
+.fold-btn{all:unset;box-sizing:border-box;display:flex;width:100%;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;color:inherit;font:inherit;letter-spacing:inherit}
+.fold-btn:hover{color:var(--ink)}
+.fold-btn:focus-visible{outline:2px solid var(--gold);outline-offset:4px}
+.fold-arrow{flex:none;width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin:0 6px 4px 0;transition:transform .15s ease}
+.panel.open .fold-arrow{transform:rotate(-135deg);margin-bottom:-4px}

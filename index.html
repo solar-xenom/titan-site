@@ -49,7 +49,7 @@
         <h1>Roll in. Play on.</h1>
         <p class="lead">D&amp;D books and dice, Pokémon and Magic cards, model kits, board games, Funko Pops and more. Plus weekly game nights at the store.</p>
         <p class="open-now" id="openNow"></p>
-        <div class="shelf" id="homeShelf"></div>
+        <div class="game-tiles" id="homeShelf"></div>
       </div>
       <div class="board">
         <h2>This week at the tables</h2>
@@ -76,6 +76,7 @@
     <p class="muted" id="shopSub">Stock is updated by the store.</p>
     <div class="toolbar">
       <input type="search" id="shopSearch" placeholder="Search by name" aria-label="Search inventory">
+      <select id="shopGame" aria-label="Filter by game" style="max-width:240px"></select>
       <div class="chips" id="shopChips"></div>
       <label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:600"><input type="checkbox" id="inStockOnly"> In stock only</label>
     </div>
@@ -86,16 +87,8 @@
   <section class="view" id="view-events" hidden>
     <h1>Game nights</h1>
     <p class="muted">Pick a night and save your seat. Bring your deck or your character sheet.</p>
-    <div class="ev-sections">
-      <div>
-        <h2>Trading card games</h2>
-        <div id="tcgEvents"></div>
-      </div>
-      <div>
-        <h2>Dungeons &amp; Dragons</h2>
-        <div id="dndEvents"></div>
-      </div>
-    </div>
+    <div class="chips" id="evFilters" style="margin:14px 0 18px"></div>
+    <div id="evList" class="ev-list"></div>
 
     <div class="campaigns">
       <div class="camp-head">
@@ -113,6 +106,11 @@
     <h1>Announcements</h1>
     <div id="newsList"></div>
     <div id="fbFeed"></div>
+  </section>
+
+  <!-- ONE GAME'S PAGE -->
+  <section class="view" id="view-game" hidden>
+    <div id="gameHub"></div>
   </section>
 
   <!-- ONE GAME NIGHT -->
@@ -220,7 +218,22 @@
     </div>
 
     <div data-pane="look" hidden>
-      <div class="panel" style="max-width:640px">
+      <div class="panel" data-fold="games">
+        <h3>Games</h3>
+        <p class="note">This list is used everywhere on the site: game nights, the shop, announcements, and the community board. Games marked <strong>Has a page</strong> get their own page and a tile on the homepage. Hiding a game removes it from menus but keeps it on old posts.</p>
+        <div class="table-wrap"><table class="stack games-edit">
+          <thead><tr><th>Order</th><th>Name</th><th>Type</th><th>Color</th><th>Has a page</th><th>Shown</th></tr></thead>
+          <tbody id="gamesTable"></tbody>
+        </table></div>
+        <h3 style="margin-top:18px;font-size:17px">Add a game</h3>
+        <div class="grid3">
+          <div class="field"><label for="ngName">Name</label><input type="text" id="ngName" maxlength="40" placeholder="Flesh and Blood"></div>
+          <div class="field"><label for="ngKind">Type</label><select id="ngKind"><option value="tcg">Card game</option><option value="rpg">Roleplaying</option><option value="board">Board games</option><option value="hobby">Hobby</option><option value="other">Other</option></select></div>
+          <div class="field"><label for="ngColor">Color</label><input type="color" id="ngColor" value="#8E6BD8"></div>
+        </div>
+        <button class="btn primary" id="ngAdd">Add game</button>
+      </div>
+      <div class="panel" data-fold="store" style="max-width:640px">
         <h3>Store info</h3>
         <p class="note">Shows in the footer on every page and in the "open now" line on the homepage.</p>
         <div class="field"><label for="siAddress">Address</label><input type="text" id="siAddress" maxlength="200"></div>
@@ -234,14 +247,14 @@
         <div class="field" style="margin-top:12px"><label for="siNote">Special hours note</label><input type="text" id="siNote" maxlength="160" placeholder="Closed Thanksgiving. Open late Friday for the prerelease."></div>
         <button class="btn primary" id="siSave">Save store info</button>
       </div>
-      <div class="panel" style="max-width:640px">
+      <div class="panel" data-fold="features" style="max-width:640px">
         <h3>Shop features</h3>
         <p class="note">Turn these off anytime. The buttons disappear from the shop right away, and requests already made stay in the staff list.</p>
         <label class="switch-row"><input type="checkbox" id="featHolds"> <span><strong>Holds for pickup</strong><br><span class="note">Customers reserve in-stock items to pick up and pay for at the store.</span></span></label>
         <label class="switch-row"><input type="checkbox" id="featPre"> <span><strong>Preorders</strong><br><span class="note">Customers reserve items marked "coming soon," like a new card set.</span></span></label>
         <button class="btn primary" id="featSave">Save features</button>
       </div>
-      <div class="panel" style="max-width:520px">
+      <div class="panel" data-fold="theme" style="max-width:520px">
         <h3>Seasonal theme</h3>
         <p class="note">Changes the colors for every visitor in both light and dark mode. Christmas adds falling snow. Visitors still pick light or dark for themselves.</p>
         <div class="field"><label for="seasonSel">Theme</label><select id="seasonSel"></select></div>
@@ -298,26 +311,27 @@
     </div>
 
     <div data-pane="inventory">
-      <div class="panel" id="csvPanel">
+      <div class="panel" data-fold="csv" id="csvPanel">
         <h3>Upload inventory</h3>
         <p class="note">Save a spreadsheet as CSV with these columns. Rows with a SKU that already exists get updated. New SKUs get added.</p>
-        <div class="csv-hint">sku,name,category,price,qty,barcode,preorder,release_date
-PKM-SV-ETB,Pokémon Scarlet &amp; Violet Elite Trainer Box,tcg,49.99,6,820650851234,,
-DND-PHB24,Player's Handbook (2024),dnd,49.95,3,9780786969517,,
-PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05</div>
-        <p class="note" style="margin-top:8px">Category must be one of: dnd, tcg, models, board, collectibles, accessories. The last three columns are optional. Put "yes" under preorder for coming-soon items.</p>
+        <div class="csv-hint">sku,name,category,price,qty,barcode,preorder,release_date,game
+PKM-SV-ETB,Pokémon Scarlet &amp; Violet Elite Trainer Box,tcg,49.99,6,820650851234,,,pokemon
+DND-PHB24,Player's Handbook (2024),dnd,49.95,3,9780786969517,,,dnd
+PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</div>
+        <p class="note" style="margin-top:8px">Category must be one of: dnd, tcg, models, board, collectibles, accessories. The last four columns are optional. Put "yes" under preorder for coming-soon items. Under game, put the game's name or short code, like magic, pokemon, yugioh, or dnd.</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
           <input type="file" id="csvFile" accept=".csv,text/csv" aria-label="Choose CSV file">
           <button class="btn primary" id="csvUpload" disabled>Upload</button>
         </div>
         <div id="csvPreview" class="note" style="margin-top:8px"></div>
       </div>
-      <div class="panel">
+      <div class="panel" data-fold="additem">
         <h3 id="niHeading">Add one item</h3>
         <div class="grid3">
           <div class="field"><label for="niSku">SKU</label><input type="text" id="niSku"></div>
           <div class="field" style="grid-column:span 2"><label for="niName">Name</label><input type="text" id="niName"></div>
           <div class="field"><label for="niCat">Category</label><select id="niCat"></select></div>
+          <div class="field"><label for="niGame">Game (optional)</label><select id="niGame"></select></div>
           <div class="field"><label for="niPrice">Price</label><input type="number" id="niPrice" min="0" step="0.01"></div>
           <div class="field"><label for="niQty">Qty</label><input type="number" id="niQty" min="0" step="1"></div>
           <div class="field"><label for="niBarcode">Barcode (optional)</label><input type="text" id="niBarcode" inputmode="numeric" maxlength="32"></div>
@@ -341,11 +355,11 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05</div>
     </div>
 
     <div data-pane="events" hidden>
-      <div class="panel">
+      <div class="panel" data-fold="addevent">
         <h3 id="neHeading">Add a game night</h3>
         <div class="grid2">
           <div class="field"><label for="neTitle">Title</label><input type="text" id="neTitle" placeholder="Friday Night Magic"></div>
-          <div class="field"><label for="neGame">Type</label><select id="neGame"><option value="tcg">Trading card game</option><option value="dnd">D&amp;D</option></select></div>
+          <div class="field"><label for="neGame">Game</label><select id="neGame"></select></div>
         </div>
         <div class="grid3">
           <div class="field"><label for="neDate">Date</label><input type="date" id="neDate"></div>
@@ -355,6 +369,8 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05</div>
         <div class="grid2">
           <div class="field"><label for="neFee">Entry fee</label><input type="text" id="neFee" placeholder="$5 or Free"></div>
           <div class="field"><label for="neNotes">Short note</label><input type="text" id="neNotes" placeholder="Commander pods, level 3 characters"></div>
+          <div class="field"><label for="neFormat">Format (optional)</label><input type="text" id="neFormat" maxlength="60" placeholder="Commander, Standard, Draft, League"></div>
+          <div class="field"><label for="neType">Kind of event</label><select id="neType"><option value="">Not set</option><option value="casual">Casual</option><option value="tournament">Tournament</option><option value="league">League</option><option value="prerelease">Prerelease</option><option value="learn">Learn to play</option></select></div>
         </div>
         <div class="field"><label for="neDesc">Description</label><textarea id="neDesc" rows="4" maxlength="2000" placeholder="Format and rules, what to bring, the campaign setting, anything players should know"></textarea></div>
         <div id="neRepeatRow" class="field" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -370,9 +386,10 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05</div>
     </div>
 
     <div data-pane="news" hidden>
-      <div class="panel">
+      <div class="panel" data-fold="addnews">
         <h3 id="naHeading">Post an announcement</h3>
         <div class="field"><label for="naTitle">Title</label><input type="text" id="naTitle"></div>
+        <div class="field"><label for="naGame">For which game? (optional)</label><select id="naGame"></select></div>
         <div class="field"><label for="naBody">Message</label><textarea id="naBody" rows="4"></textarea></div>
         <label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="naPin"> Pin to top</label>
         <button class="btn primary" id="naAdd" style="margin-top:10px">Post</button>

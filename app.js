@@ -106,6 +106,7 @@ function renderStore(){
   $("#openNow").innerHTML = `<span class="dot ${os.open?"on":""}"></span>${esc(os.text)}${st.note ? ` <span class="open-note">${esc(st.note)}</span>` : ""}`;
 }
 function renderStoreForm(){
+  renderGamesTable();
   const st = state.store;
   $("#siAddress").value = st.address; $("#siPhone").value = st.phone; $("#siNote").value = st.note;
   $("#siFb").value = state.feat.fb || ""; $("#featHolds").checked = state.feat.holds; $("#featPre").checked = state.feat.preorders;
@@ -121,14 +122,107 @@ $("#seasonSel").innerHTML = Object.entries(SEASONS).map(([k,v]) => `<option valu
 applyMode(document.documentElement.getAttribute("data-mode") === "light" ? "light" : "dark");
 applySeason(document.documentElement.getAttribute("data-season") || "none");
 
+/* ---------- games: the store-wide list ---------- */
+// Starting list, used until the store's own list loads from the database.
+state.games = [
+  { slug:"magic",   name:"Magic: The Gathering", kind:"tcg", color:"#C26A2E", featured:true, active:true, sort:10 },
+  { slug:"pokemon", name:"Pokémon",              kind:"tcg", color:"#E0B21B", featured:true, active:true, sort:20 },
+  { slug:"yugioh",  name:"Yu-Gi-Oh!",            kind:"tcg", color:"#7A4FCC", featured:true, active:true, sort:30 },
+  { slug:"dnd",     name:"Dungeons & Dragons",   kind:"rpg", color:"#B32630", featured:true, active:true, sort:40 }
+];
+state.evGame = "all";
+const EVENT_TYPES = { casual:"Casual", tournament:"Tournament", league:"League", prerelease:"Prerelease", learn:"Learn to play" };
+const BOARD_EXTRA = { tcg_other:"Other card game", other:"Other", models:"Model kits" };
+const gameBy = slug => state.games.find(g => g.slug === slug);
+const shortName = n => String(n||"").replace(/:.*$/,"").replace("Dungeons & Dragons","D&D").trim();
+function inkFor(hex){ const n = parseInt(String(hex).slice(1),16); if(isNaN(n)) return "#FFFFFF"; const r=n>>16&255, g=n>>8&255, b=n&255; return (0.299*r + 0.587*g + 0.114*b) > 150 ? "#1A130D" : "#FFFFFF"; }
+const gameColor = (slug, fallback) => gameBy(slug)?.color || (fallback === "dnd" ? "var(--red)" : "var(--blue)");
+function gameTag(slug, fallback){
+  const g = gameBy(slug);
+  if(g) return `<span class="game-tag" style="background:${g.color};color:${inkFor(g.color)}">${esc(shortName(g.name))}</span>`;
+  if(fallback) return `<span class="game-tag ${fallback}">${fallback === "dnd" ? "D&D" : "Card game"}</span>`;
+  return "";
+}
+const activeGames = () => state.games.filter(g => g.active).sort((a,b) => (a.sort - b.sort) || a.name.localeCompare(b.name));
+const featuredGames = () => activeGames().filter(g => g.featured);
+function gameOptions(selected, blank){
+  const list = activeGames().slice();
+  if(selected && !list.some(g => g.slug === selected) && gameBy(selected)) list.push(gameBy(selected));
+  return (blank !== undefined ? `<option value="">${esc(blank)}</option>` : "") + list.map(g => `<option value="${g.slug}" ${g.slug === selected ? "selected" : ""}>${esc(g.name)}</option>`).join("");
+}
+const boardGameName = slug => gameBy(slug)?.name || BOARD_EXTRA[slug] || "Other";
+function boardGameOptions(selected, all){
+  return (all ? `<option value="all">All games</option>` : "") + activeGames().map(g => `<option value="${g.slug}" ${g.slug===selected?"selected":""}>${esc(g.name)}</option>`).join("")
+    + `<option value="tcg_other" ${selected==="tcg_other"?"selected":""}>Other card game</option><option value="other" ${selected==="other"?"selected":""}>Other</option>`;
+}
+function fillGameSelects(){
+  const set = (sel, html) => { const el = $(sel); if(!el) return; const v = el.value; el.innerHTML = html; if([...el.options].some(o => o.value === v)) el.value = v; };
+  set("#neGame", gameOptions(null));
+  set("#niGame", gameOptions(null, "None (works for any game)"));
+  set("#naGame", gameOptions(null, "Whole store"));
+  set("#shopGame", `<option value="">All games</option>` + activeGames().map(g => `<option value="${g.slug}">${esc(g.name)}</option>`).join(""));
+  set("#npGame", boardGameOptions(null, false));
+  set("#bGame", boardGameOptions(null, true));
+}
+async function loadGames(){
+  const rows = must(await sb.from("games").select("*").order("sort").order("name"));
+  if(rows.length) state.games = rows;
+  fillGameSelects();
+}
+function renderGamesTable(){
+  if(!state.isOwner) return;
+  const KIND = { tcg:"Card game", rpg:"Roleplaying", board:"Board games", hobby:"Hobby", other:"Other" };
+  $("#gamesTable").innerHTML = [...state.games].sort((a,b) => (a.sort - b.sort) || a.name.localeCompare(b.name)).map(g => `<tr>
+    <td data-label="Order"><input type="number" class="inline-in qty-in" value="${g.sort}" data-gfield="sort" data-gslug="${esc(g.slug)}" aria-label="Order for ${esc(g.name)}"></td>
+    <td data-label="Name"><input type="text" class="inline-in name-in" maxlength="40" value="${esc(g.name)}" data-gfield="name" data-gslug="${esc(g.slug)}" aria-label="Name"></td>
+    <td data-label="Type"><select class="inline-in" data-gfield="kind" data-gslug="${esc(g.slug)}" aria-label="Type for ${esc(g.name)}">${Object.entries(KIND).map(([k,v]) => `<option value="${k}" ${g.kind===k?"selected":""}>${v}</option>`).join("")}</select></td>
+    <td data-label="Color"><input type="color" value="${esc(g.color)}" data-gfield="color" data-gslug="${esc(g.slug)}" aria-label="Color for ${esc(g.name)}"></td>
+    <td data-label="Has a page"><input type="checkbox" ${g.featured?"checked":""} data-gfield="featured" data-gslug="${esc(g.slug)}" aria-label="${esc(g.name)} has a page"></td>
+    <td data-label="Shown"><input type="checkbox" ${g.active?"checked":""} data-gfield="active" data-gslug="${esc(g.slug)}" aria-label="Show ${esc(g.name)}"></td>
+  </tr>${g.featured ? `<tr class="game-blurb-row"><td colspan="6"><label style="font-size:13px">Intro on the ${esc(shortName(g.name))} page</label><input type="text" class="inline-in" maxlength="300" value="${esc(g.blurb||"")}" data-gfield="blurb" data-gslug="${esc(g.slug)}" placeholder="A sentence or two about this game at the store" style="width:100%"></td></tr>` : ""}`).join("");
+}
+
+/* ---------- a game's page ---------- */
+function renderGameHub(){
+  if(state.view !== "game") return;
+  const g = gameBy(state.hubSlug);
+  if(!g){ $("#gameHub").innerHTML = `<p><a href="#home">← Home</a></p><div class="empty">${state.loaded ? "That game page doesn't exist." : "Loading..."}</div>`; return; }
+  const short = shortName(g.name), ink = inkFor(g.color);
+  const evs = state.events.filter(e => e.game_slug === g.slug).slice(0, 6);
+  const pre = state.inventory.filter(i => i.game_slug === g.slug && i.preorder);
+  const stock = state.inventory.filter(i => i.game_slug === g.slug && !i.preorder && i.qty > 0).sort((a,b) => b.updatedAt - a.updatedAt);
+  const news = sortedNews().filter(n => n.game_slug === g.slug).slice(0, 3);
+  const posts = state.posts.filter(p => p.game === g.slug && p.status === "open").slice(0, 4);
+  const camps = g.kind === "rpg" ? state.campaigns.filter(c => c.status === "recruiting" || c.status === "full") : [];
+  const items = list => { const img = list.some(i => i.image_url); return `<div class="items">${list.map(i => itemTag(i, img)).join("")}</div>`; };
+  const sec = (title, link, body) => `<section class="hub-sec"><div class="hub-sec-head"><h2>${title}</h2>${link || ""}</div>${body}</section>`;
+  let html = `<header class="hub-head" style="--gc:${g.color};--gi:${ink}">
+      <p class="crumb"><a href="#home">← Home</a></p>
+      <h1>${esc(g.name)}</h1>
+      ${g.blurb ? `<p class="hub-blurb">${esc(g.blurb)}</p>` : ""}
+    </header>`;
+  html += sec("Next up", `<a href="#events" data-evgame="${esc(g.slug)}">All ${esc(short)} nights →</a>`,
+    evs.length ? `<div class="ev-list">${evs.map(e => eventCard(e, false)).join("")}</div>` : `<div class="empty">No ${esc(short)} nights on the schedule right now. Check back soon!</div>`);
+  if(camps.length) html += sec("Ongoing campaigns", `<a href="#events">See all campaigns →</a>`, `<div class="hub-camps">${camps.map(campCard).join("")}</div>`);
+  if(pre.length) html += sec("Preorders", "", items(pre));
+  html += sec("In stock", stock.length ? `<a href="#shop" data-shopgame="${esc(g.slug)}">See all ${esc(short)} items →</a>` : "",
+    stock.length ? items(stock.slice(0, 8)) : `<div class="empty">Nothing listed for ${esc(short)} right now. Ask at the counter!</div>`);
+  if(news.length) html += sec("News", `<a href="#news">All announcements →</a>`, news.map(n => postHtml(n, false)).join(""));
+  html += sec("Community", `<a href="#board" data-boardgame="${esc(g.slug)}">Go to the board →</a>`,
+    posts.length ? `<div class="hub-posts">${posts.map(p => `<a class="hub-post" href="#board" data-boardgame="${esc(g.slug)}"><span class="pill kind">${esc(KINDS[p.kind]||"Post")}</span><strong>${esc(p.title)}</strong><span class="note">${esc(p.author_name)}, ${esc(timeAgo(p.created_at))}</span></a>`).join("")}</div>`
+      : `<div class="empty">No ${esc(short)} posts yet. <a href="#board" data-boardgame="${esc(g.slug)}">Find a group or start a conversation.</a></div>`);
+  $("#gameHub").innerHTML = html;
+}
+
 /* ---------- routing ---------- */
-const VIEWS = ["home","shop","events","event","news","board","account","staff"];
+const VIEWS = ["home","shop","events","event","game","news","board","account","staff"];
 function closeMenu(){ document.querySelector("header.top").classList.remove("open"); $("#menuBtn").setAttribute("aria-expanded","false"); }
 function route(){
   closeMenu();
   let v = (location.hash||"").replace("#","") || "home";
   state.detailId = null;
   if(v.startsWith("event-")){ state.detailId = v.slice(6); v = "event"; }
+  if(v.startsWith("game-")){ state.hubSlug = v.slice(5); v = "game"; }
   if(!VIEWS.includes(v)) v = "home";
   state.view = v;
   if(v==="staff" && !state.isStaff) v = "account";
@@ -143,6 +237,7 @@ function route(){
   $("#accountLink").textContent = state.user ? "My account" : "Log in";
   if(v==="account") document.querySelector('nav.tabs a[href="#account"]').setAttribute("aria-current","page");
   if(v==="event"){ document.querySelector('nav.tabs a[href="#events"]').setAttribute("aria-current","page"); showEventDetail(); }
+  if(v==="game") renderGameHub();
   $("#teamChip").hidden = !state.isOwner;
   $("#lookChip").hidden = !state.isOwner;
   $("#csvPanel").hidden = !state.isOwner;
@@ -206,7 +301,7 @@ async function loadNews(){
 async function loadAll(){
   if(!sb){ setStatus("Add your Supabase key in config.js to load store data.", true); renderAll(); return; }
   try{
-    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadBoard(), loadBlocked(), loadReservations(), loadCampaigns()]);
+    await Promise.all([loadProducts(), loadEvents(), loadCounts(), loadRoster(), loadNews(), loadTeam(), loadSettings(), loadMine(), loadGames(), loadBoard(), loadBlocked(), loadReservations(), loadCampaigns()]);
     setStatus("");
     state.loaded = true;
   }catch(e){
@@ -247,7 +342,7 @@ const myName = () => state.profile?.display_name || state.user?.email || "";
 
 async function loadMine(){
   if(!state.user){ state.mine = []; return; }
-  const rows = must(await sb.from("signups").select("id, event_id, events(title, date, time, game)").eq("user_id", state.user.id));
+  const rows = must(await sb.from("signups").select("id, event_id, events(title, date, time, game, game_slug)").eq("user_id", state.user.id));
   state.mine = rows.filter(r => r.events && r.events.date >= today())
     .sort((a,b) => (a.events.date + a.events.time).localeCompare(b.events.date + b.events.time));
 }
@@ -258,7 +353,7 @@ function renderAccount(){
   if(document.activeElement !== $("#meName")) $("#meName").value = myName();
   $("#myNights").innerHTML = state.mine.length ? state.mine.map(m => `
     <div class="mine-row">
-      <div><span class="game-tag ${m.events.game}">${m.events.game==="dnd"?"D&D":"TCG"}</span><strong>${esc(m.events.title)}</strong>
+      <div>${gameTag(m.events.game_slug, m.events.game)}<strong>${esc(m.events.title)}</strong>
         <div class="note">${esc(fmtDate(m.events.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime((m.events.time||"").slice(0,5)))}</div></div>
       <button class="btn small danger" data-cancel="${esc(m.id)}">Cancel my seat</button>
     </div>`).join("") : `<p class="note">You're not signed up for anything yet. <a href="#events">See game nights</a></p>`;
@@ -340,13 +435,18 @@ function itemTag(it, placeholder){
 }
 
 function renderHome(){
-  $("#homeShelf").innerHTML = Object.entries(CATS).map(([k,c]) => `<a href="#shop" data-cat="${k}">${esc(c.label)}</a>`).join("");
+  $("#homeShelf").innerHTML = featuredGames().map(g => {
+    const next = state.events.find(e => e.game_slug === g.slug);
+    return `<a class="game-tile" href="#game-${esc(g.slug)}" style="--gc:${g.color};--gi:${inkFor(g.color)}">
+      <span class="gt-name">${esc(shortName(g.name))}</span>
+      <span class="gt-sub">${next ? `Next: ${esc(fmtDate(next.date,{weekday:"short",month:"short",day:"numeric"}))}` : "News, events, and products"}</span></a>`;
+  }).join("") + `<a class="game-tile shop-all" href="#shop"><span class="gt-name">Shop everything</span><span class="gt-sub">Board games, model kits, Funko, dice, and more</span></a>`;
   const evs = state.events.slice(0,4);
   $("#homeEvents").innerHTML = evs.length ? evs.map(e => {
     const n = taken(e.id), full = n >= e.seats;
     const [y,m,d] = e.date.split("-").map(Number); const dt=new Date(y,m-1,d);
     return `<div class="ev-row"><div class="date-chip"><b>${dt.getDate()}</b><span>${dt.toLocaleDateString(undefined,{month:"short"})}</span></div>
-      <div><span class="game-tag ${e.game}">${e.game==="dnd"?"D&D":"TCG"}</span><strong>${esc(e.title)}</strong><div class="note">${esc(fmtDate(e.date,{weekday:"long"}))} at ${esc(fmtTime(e.time))}</div></div>
+      <div>${gameTag(e.game_slug, e.game)}<strong>${esc(e.title)}</strong><div class="note">${esc(fmtDate(e.date,{weekday:"long"}))} at ${esc(fmtTime(e.time))}</div></div>
       <div class="seats ${full?"full":""}">${full?"Full":`${e.seats-n} seat${e.seats-n===1?"":"s"} left`}</div></div>`;
   }).join("") : `<p class="muted" style="margin:8px 0">No game nights posted yet.</p>`;
   const news = sortedNews().slice(0,2);
@@ -363,6 +463,7 @@ function renderShop(){
   const q = $("#shopSearch").value.trim().toLowerCase(), only = $("#inStockOnly").checked;
   const list = state.inventory.filter(i =>
     (state.shopCat==="all" || (state.shopCat==="soon" ? i.preorder : i.category===state.shopCat)) &&
+    (!$("#shopGame").value || i.game_slug === $("#shopGame").value) &&
     (!q || i.name.toLowerCase().includes(q)) &&
     (!only || i.qty > 0)
   ).sort((a,b)=>a.name.localeCompare(b.name));
@@ -374,11 +475,11 @@ function renderShop(){
 }
 
 function eventEditForm(e){
-  return `<div class="ev-card ${e.game} editing">
+  return `<div class="ev-card editing" style="border-left-color:${gameColor(e.game_slug, e.game)}">
     <h3 style="margin:0 0 12px">Editing game night</h3>
     <div class="grid2">
       <div class="field"><label for="ee-title">Title</label><input type="text" id="ee-title" value="${esc(e.title)}"></div>
-      <div class="field"><label for="ee-game">Type</label><select id="ee-game"><option value="tcg" ${e.game==="tcg"?"selected":""}>Trading card game</option><option value="dnd" ${e.game==="dnd"?"selected":""}>D&amp;D</option></select></div>
+      <div class="field"><label for="ee-game">Game</label><select id="ee-game">${gameOptions(e.game_slug || (e.game === "dnd" ? "dnd" : ""), e.game_slug ? undefined : "Pick a game")}</select></div>
     </div>
     <div class="grid3">
       <div class="field"><label for="ee-date">Date</label><input type="date" id="ee-date" value="${esc(e.date)}"></div>
@@ -389,6 +490,10 @@ function eventEditForm(e){
       <div class="field"><label for="ee-fee">Entry fee</label><input type="text" id="ee-fee" value="${esc(e.fee||"")}"></div>
       <div class="field"><label for="ee-notes">Short note</label><input type="text" id="ee-notes" value="${esc(e.notes||"")}"></div>
     </div>
+    <div class="grid2">
+      <div class="field"><label for="ee-format">Format</label><input type="text" id="ee-format" maxlength="60" value="${esc(e.format||"")}" placeholder="Commander, Standard, League"></div>
+      <div class="field"><label for="ee-type">Kind of event</label><select id="ee-type"><option value="">Not set</option>${Object.entries(EVENT_TYPES).map(([k,v]) => `<option value="${k}" ${e.event_type===k?"selected":""}>${v}</option>`).join("")}</select></div>
+    </div>
     <div class="field"><label for="ee-desc">Description</label><textarea id="ee-desc" rows="4" maxlength="2000">${esc(e.description||"")}</textarea></div>
     <div class="bactions"><button class="btn small primary" data-save-event="${esc(e.id)}">Save</button><button class="btn small" data-cancel-event="1">Cancel</button></div>
   </div>`;
@@ -397,12 +502,13 @@ function eventCard(e, staff){
   if(staff && state.editEvent === e.id) return eventEditForm(e);
   const n = taken(e.id), full = n >= e.seats;
   const pct = Math.min(100, Math.round(n/e.seats*100));
-  let html = `<div class="ev-card ${e.game}">
+  let html = `<div class="ev-card ${e.game}" style="border-left-color:${gameColor(e.game_slug, e.game)}">
+    <div class="ev-tags">${gameTag(e.game_slug, e.game)}${e.format ? `<span class="pill">${esc(e.format)}</span>` : ""}${e.event_type ? `<span class="pill">${EVENT_TYPES[e.event_type]}</span>` : ""}</div>
     <div class="when">${esc(fmtDate(e.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime(e.time))}</div>
     <h3 style="margin:2px 0 0"><a class="ev-link" href="#event-${esc(e.id)}">${esc(e.title)}</a></h3>
     <div class="meta"><span>${esc(e.fee||"Free")}</span>${e.notes?`<span>${esc(e.notes)}</span>`:""}</div>
     <div class="seats ${full?"full":""}">${n} of ${e.seats} seats taken</div>
-    <div class="bar"><i style="width:${pct}%"></i></div>`;
+    <div class="bar"><i style="width:${pct}%;background:${gameColor(e.game_slug, e.game)}"></i></div>`;
   if(staff){
     const r = rosterFor(e.id), came = r.filter(x => x.attended).length;
     html += r.length ? `<p class="note" style="margin:10px 0 4px">Check off who showed up. ${came} of ${r.length} here.</p>
@@ -466,8 +572,8 @@ function renderEventDetail(){
   const n = taken(e.id), full = n >= e.seats, pct = Math.min(100, Math.round(n/e.seats*100));
   const list = state.players && state.players.id === e.id ? state.players.list : null;
   $("#eventDetail").innerHTML = back + `
-    <div class="ev-card ev-detail ${e.game}">
-      <span class="game-tag ${e.game}">${e.game==="dnd"?"D&D":"TCG"}</span>
+    <div class="ev-card ev-detail ${e.game}" style="border-left-color:${gameColor(e.game_slug, e.game)}">
+      <div class="ev-tags">${gameTag(e.game_slug, e.game)}${e.format ? `<span class="pill">${esc(e.format)}</span>` : ""}${e.event_type ? `<span class="pill">${EVENT_TYPES[e.event_type]}</span>` : ""}</div>
       <h1 class="ev-title">${esc(e.title)}</h1>
       <div class="when">${esc(fmtDate(e.date,{weekday:"long",month:"long",day:"numeric"}))} at ${esc(fmtTime(e.time))}</div>
       <div class="meta"><span>${esc(e.fee||"Free")}</span>${e.notes?`<span>${esc(e.notes)}</span>`:""}</div>
@@ -486,9 +592,14 @@ function renderEventDetail(){
 async function refreshDetail(){ if(state.view === "event" && state.detailId){ try{ await loadPlayers(state.detailId); }catch(e){ console.error(e); } } }
 
 function renderEvents(){
-  const tcg = state.events.filter(e=>e.game==="tcg"), dnd = state.events.filter(e=>e.game==="dnd");
-  $("#tcgEvents").innerHTML = tcg.length ? tcg.map(e=>eventCard(e,false)).join("") : `<div class="empty">No card game nights posted yet.</div>`;
-  $("#dndEvents").innerHTML = dnd.length ? dnd.map(e=>eventCard(e,false)).join("") : `<div class="empty">No D&amp;D sessions posted yet.</div>`;
+  const withNights = activeGames().filter(g => state.events.some(e => e.game_slug === g.slug));
+  if(state.evGame !== "all" && !withNights.some(g => g.slug === state.evGame) && gameBy(state.evGame)) withNights.push(gameBy(state.evGame));
+  $("#evFilters").innerHTML = `<button class="chip" data-evfilter="all" aria-pressed="${state.evGame==="all"}">All games</button>` +
+    withNights.map(g => `<button class="chip game-chip" data-evfilter="${esc(g.slug)}" aria-pressed="${state.evGame===g.slug}" style="--gc:${g.color};--gi:${inkFor(g.color)}">${esc(shortName(g.name))}</button>`).join("");
+  const list = state.events.filter(e => state.evGame === "all" || e.game_slug === state.evGame);
+  const g = gameBy(state.evGame);
+  $("#evList").innerHTML = list.length ? list.map(e => eventCard(e, false)).join("")
+    : `<div class="empty">${g ? `No ${esc(shortName(g.name))} nights on the schedule right now.` : "No game nights posted yet."}</div>`;
 }
 
 function sortedNews(){ return [...state.news].sort((a,b)=> (b.pinned?1:0)-(a.pinned?1:0) || b.createdAt-a.createdAt); }
@@ -497,6 +608,7 @@ function postHtml(p, staff){
     <h3 style="margin:0 0 12px">Editing announcement</h3>
     <div class="field"><label for="en-title">Title</label><input type="text" id="en-title" value="${esc(p.title)}"></div>
     <div class="field"><label for="en-body">Message</label><textarea id="en-body" rows="4">${esc(p.body)}</textarea></div>
+    <div class="field"><label for="en-game">For which game?</label><select id="en-game">${gameOptions(p.game_slug || "", "Whole store")}</select></div>
     <label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="en-pin" ${p.pinned?"checked":""}> Pin to top</label>
     <div class="bactions"><button class="btn small primary" data-save-news="${esc(p.id)}">Save</button><button class="btn small" data-cancel-news="1">Cancel</button></div>
   </article>`;
@@ -515,6 +627,7 @@ function itemMoreRow(i){
     <div class="more-photo">${i.image_url ? `<img src="${esc(i.image_url)}" alt="Photo of ${esc(i.name)}">` : `<div class="no-photo">No photo</div>`}</div>
     <div>
       <div class="grid3">
+        <div class="field"><label>Game</label><select class="inline-in" data-field="game_slug" data-sku="${esc(i.sku)}" aria-label="Game for ${esc(i.name)}">${gameOptions(i.game_slug || "", "None (any game)")}</select></div>
         <div class="field"><label>Barcode</label><input type="text" class="inline-in" inputmode="numeric" maxlength="32" value="${esc(i.barcode||"")}" data-field="barcode" data-sku="${esc(i.sku)}" aria-label="Barcode for ${esc(i.name)}"></div>
         <div class="field"><label>Release date</label><input type="date" class="inline-in" value="${esc(i.release_date||"")}" data-field="release_date" data-sku="${esc(i.sku)}" aria-label="Release date for ${esc(i.name)}"></div>
         <div class="field" style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;margin:0 0 10px;color:var(--ink)"><input type="checkbox" data-field="preorder" data-sku="${esc(i.sku)}" ${i.preorder?"checked":""}> Coming soon, preorder</label></div>
@@ -696,16 +809,15 @@ function renderFb(){
 
 function renderAll(){
   state.pendingRender = false;
-  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderEventDetail(); renderCampaigns(); renderFb(); renderStore();
+  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderEventDetail(); renderCampaigns(); renderFb(); renderStore(); renderGameHub();
   if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); renderBlocked(); renderRes(); }
 }
 
 /* ---------- community board ---------- */
 const KINDS = { lfp:"Looking for players", lfg:"Looking for a group", talk:"Discussion" };
-const GAMES = { dnd:"D&D / RPG", pokemon:"Pokémon", magic:"Magic", tcg_other:"Other card game", board:"Board games", models:"Model kits", other:"Other" };
+
 $("#npKind").innerHTML = Object.entries(KINDS).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
-$("#npGame").innerHTML = Object.entries(GAMES).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
-$("#bGame").innerHTML = `<option value="all">All games</option>` + Object.entries(GAMES).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+fillGameSelects();
 
 function timeAgo(iso){
   const sec = Math.max(1, Math.round((Date.now() - Date.parse(iso)) / 1000));
@@ -739,7 +851,7 @@ function postCard(p){
     return `<article class="bpost ${p.kind}">
       <div class="grid2">
         <div class="field"><label>Type</label><select id="ed-kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${p.kind===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
-        <div class="field"><label>Game</label><select id="ed-game">${Object.entries(GAMES).map(([k,v])=>`<option value="${k}" ${p.game===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
+        <div class="field"><label>Game</label><select id="ed-game">${boardGameOptions(p.game, false)}</select></div>
       </div>
       <div class="field"><label>Title</label><input type="text" id="ed-title" maxlength="100" value="${esc(p.title)}"></div>
       <div class="field"><label>Details</label><textarea id="ed-body" rows="4" maxlength="2000">${esc(p.body)}</textarea></div>
@@ -747,7 +859,7 @@ function postCard(p){
     </article>`;
   }
   return `<article class="bpost ${p.kind} ${p.status==="closed"?"closed":""}">
-    <span class="pill kind">${esc(KINDS[p.kind]||"Post")}</span><span class="pill">${esc(GAMES[p.game]||"Other")}</span>${p.status==="closed"?'<span class="pill closed">Closed</span>':""}
+    <span class="pill kind">${esc(KINDS[p.kind]||"Post")}</span>${gameBy(p.game) ? gameTag(p.game) : `<span class="pill">${esc(boardGameName(p.game))}</span>`}${p.status==="closed"?'<span class="pill closed">Closed</span>':""}
     <h3>${esc(p.title)}</h3>
     <div class="byline">${esc(p.author_name)}, ${esc(timeAgo(p.created_at))}${p.updated_at && p.updated_at !== p.created_at ? " (edited)" : ""}</div>
     <div class="body">${esc(p.body)}</div>
@@ -778,6 +890,11 @@ document.addEventListener("click", async ev => {
   if(t.dataset.edit){ state.editing = t.dataset.edit; renderBoard(); return; }
   if(t.dataset.editCancel){ state.editing = null; renderBoard(); return; }
   if(t.dataset.staff === "look") renderStoreForm();
+  if(t.dataset.evfilter){ state.evGame = t.dataset.evfilter; renderEvents(); return; }
+  if(t.dataset.evgame){ state.evGame = t.dataset.evgame; renderEvents(); }
+  if(t.dataset.shopgame){ $("#shopGame").value = t.dataset.shopgame; state.shopCat = "all"; renderShop(); }
+  if(t.dataset.boardgame){ $("#bGame").value = t.dataset.boardgame; renderBoard(); }
+  if(t.id === "ngAdd"){ addGame(); return; }
   if(t.dataset.resfilter){ state.resFilter = t.dataset.resfilter; renderRes(); return; }
   if(t.dataset.reserve){ state.reserve = { sku:t.dataset.reserve, kind:t.dataset.kind }; renderHome(); renderShop(); return; }
   if(t.dataset.reserveCancel){ state.reserve = null; renderHome(); renderShop(); return; }
@@ -986,7 +1103,7 @@ document.addEventListener("click", async ev => {
     }
     else if(t.id==="csvDownload"){
       const q = v => { const x = String(v ?? ""); return /[",\n]/.test(x) ? `"${x.replace(/"/g,'""')}"` : x; };
-      const rows = [["sku","name","category","price","qty","barcode","preorder","release_date"], ...[...state.inventory].sort((a,b)=>a.name.localeCompare(b.name)).map(i => [i.sku, i.name, i.category, Number(i.price).toFixed(2), i.qty, i.barcode||"", i.preorder?"yes":"", i.release_date||""])];
+      const rows = [["sku","name","category","price","qty","barcode","preorder","release_date","game"], ...[...state.inventory].sort((a,b)=>a.name.localeCompare(b.name)).map(i => [i.sku, i.name, i.category, Number(i.price).toFixed(2), i.qty, i.barcode||"", i.preorder?"yes":"", i.release_date||"", i.game_slug||""])];
       const blob = new Blob(["\uFEFF" + rows.map(r => r.map(q).join(",")).join("\r\n")], { type:"text/csv" });
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `titan-inventory-${today()}.csv`;
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -996,8 +1113,10 @@ document.addEventListener("click", async ev => {
     else if(t.dataset.cancelEvent){ state.editEvent = null; renderStaffEvents(); }
     else if(t.dataset.saveEvent){
       const id = t.dataset.saveEvent;
-      const row = { title:$("#ee-title").value.trim(), game:$("#ee-game").value, date:$("#ee-date").value, time:$("#ee-time").value,
-        seats:Math.max(1, parseInt($("#ee-seats").value,10)||8), fee:$("#ee-fee").value.trim()||"Free", notes:$("#ee-notes").value.trim(), description:$("#ee-desc").value.trim() || null };
+      const slug = $("#ee-game").value || null;
+      const row = { title:$("#ee-title").value.trim(), game_slug:slug, game:gameBy(slug)?.kind === "rpg" ? "dnd" : "tcg", date:$("#ee-date").value, time:$("#ee-time").value,
+        seats:Math.max(1, parseInt($("#ee-seats").value,10)||8), fee:$("#ee-fee").value.trim()||"Free", notes:$("#ee-notes").value.trim(), description:$("#ee-desc").value.trim() || null,
+        format:$("#ee-format").value.trim() || null, event_type:$("#ee-type").value || null };
       if(!row.title || !row.date || !row.time){ toast("Add a title, date and time"); return; }
       const signed = taken(id);
       if(row.seats < signed && !confirm(`${signed} people are already signed up, which is more than ${row.seats} seats. Save anyway? Nobody gets removed.`)) return;
@@ -1009,7 +1128,7 @@ document.addEventListener("click", async ev => {
     else if(t.dataset.saveNews){
       const title = $("#en-title").value.trim(), body = $("#en-body").value.trim();
       if(!title || !body){ toast("Add a title and a message"); return; }
-      must(await sb.from("announcements").update({ title, body, pinned:$("#en-pin").checked }).eq("id", t.dataset.saveNews));
+      must(await sb.from("announcements").update({ title, body, pinned:$("#en-pin").checked, game_slug:$("#en-game").value || null }).eq("id", t.dataset.saveNews));
       state.editNews = null; await loadNews(); renderAll(); toast("Announcement updated");
     }
     else if(t.id==="seasonSave"){
@@ -1065,6 +1184,7 @@ document.addEventListener("submit", async ev => {
 });
 
 $("#shopSearch").addEventListener("input", renderShop);
+$("#shopGame").addEventListener("change", renderShop);
 $("#inStockOnly").addEventListener("change", renderShop);
 $("#invSearch").addEventListener("input", renderInventoryTable);
 $("#niCat").innerHTML = Object.entries(CATS).map(([k,c])=>`<option value="${k}">${esc(c.label)}</option>`).join("");
@@ -1082,6 +1202,16 @@ document.addEventListener("change", async ev => {
     try{ must(await sb.from("staff").update({ role:sel.value }).eq("user_id", sel.dataset.setrole)); toast("Role updated"); }
     catch(e){ handleError(e); }
     await loadTeam(); renderTeam(); return;
+  }
+  const gf = ev.target.closest("[data-gfield]");
+  if(gf && sb){
+    const field = gf.dataset.gfield; let value = gf.type === "checkbox" ? gf.checked : gf.value;
+    if(field === "sort") value = parseInt(value, 10) || 0;
+    if(field === "name"){ value = value.trim(); if(!value){ toast("Name can't be empty"); renderGamesTable(); return; } }
+    if(field === "blurb") value = value.trim() || null;
+    try{ must(await sb.from("games").update({ [field]:value }).eq("slug", gf.dataset.gslug)); toast("Saved"); }
+    catch(e){ handleError(e); }
+    await loadGames(); renderAll(); if(field === "featured" || field === "sort") renderGamesTable(); return;
   }
   if(ev.target.id === "neRepeat"){ $("#neWeeksWrap").hidden = !ev.target.checked; return; }
   const att = ev.target.closest("[data-attend]");
@@ -1107,7 +1237,7 @@ document.addEventListener("change", async ev => {
   if(fld && sb){
     const field = fld.dataset.field; let value = fld.type === "checkbox" ? fld.checked : fld.value;
     if(field === "barcode"){ value = value.replace(/[^0-9Xx]/g,"") || null; fld.value = value || ""; }
-    if(field === "release_date"){ value = value || null; }
+    if(field === "release_date" || field === "game_slug"){ value = value || null; }
     if(field === "name"){ value = value.trim(); if(!value){ toast("Name can't be empty"); renderInventoryTable(); return; } }
     if(field === "price"){ value = Math.max(0, parseFloat(value) || 0); fld.value = value.toFixed(2); }
     try{ must(await sb.from("products").update({ [field]:value, updated_at:nowIso() }).eq("sku", fld.dataset.sku)); toast("Saved"); }
@@ -1128,21 +1258,22 @@ async function addItem(){
   if(!sku || !name){ toast("Add a SKU and a name"); return; }
   if(state.inventory.some(i => i.sku === sku) && !confirm(`An item with SKU ${sku} already exists. Replace it?`)) return;
   must(await sb.from("products").upsert({ sku, name, category:$("#niCat").value, price:parseFloat($("#niPrice").value)||0, qty:Math.max(0, parseInt($("#niQty").value,10)||0),
-    barcode:$("#niBarcode").value.replace(/[^0-9Xx]/g,"") || null, preorder:$("#niPreorder").checked, release_date:$("#niRelease").value || null, updated_at:nowIso() }));
+    game_slug:$("#niGame").value || null, barcode:$("#niBarcode").value.replace(/[^0-9Xx]/g,"") || null, preorder:$("#niPreorder").checked, release_date:$("#niRelease").value || null, updated_at:nowIso() }));
   ["#niSku","#niName","#niPrice","#niQty","#niBarcode","#niRelease"].forEach(s=>$(s).value=""); $("#niPreorder").checked = false;
   await loadProducts(); renderAll(); toast("Item added");
 }
 async function addEvent(){
   const title=$("#neTitle").value.trim(), date=$("#neDate").value, time=$("#neTime").value;
   if(!title || !date || !time){ toast("Add a title, date and time"); return; }
-  const row = { title, game:$("#neGame").value, date, time, seats:Math.max(1, parseInt($("#neSeats").value,10)||8), fee:$("#neFee").value.trim()||"Free", notes:$("#neNotes").value.trim(), description:$("#neDesc").value.trim() || null };
+  const slug = $("#neGame").value || null;
+  const row = { title, game_slug:slug, game:gameBy(slug)?.kind === "rpg" ? "dnd" : "tcg", format:$("#neFormat").value.trim() || null, event_type:$("#neType").value || null, date, time, seats:Math.max(1, parseInt($("#neSeats").value,10)||8), fee:$("#neFee").value.trim()||"Free", notes:$("#neNotes").value.trim(), description:$("#neDesc").value.trim() || null };
   const weeks = $("#neRepeat").checked ? Math.min(12, Math.max(2, parseInt($("#neWeeks").value,10)||4)) : 1;
   const rows = Array.from({ length:weeks }, (_, w) => {
     const [y,m,d] = date.split("-").map(Number), dt = new Date(y, m-1, d + 7*w);
     return { ...row, date:`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}` };
   });
   must(await sb.from("events").insert(rows));
-  ["#neTitle","#neDate","#neTime","#neFee","#neNotes","#neDesc"].forEach(s=>$(s).value=""); $("#neSeats").value = 8;
+  ["#neTitle","#neDate","#neTime","#neFee","#neNotes","#neDesc","#neFormat","#neType"].forEach(s=>$(s).value=""); $("#neSeats").value = 8;
   $("#neRepeat").checked = false; $("#neWeeksWrap").hidden = true;
   await loadEvents(); renderAll();
   toast(weeks > 1 ? `Added ${weeks} weekly game nights. They're in the list below.` : "Game night added");
@@ -1150,9 +1281,20 @@ async function addEvent(){
 async function addNews(){
   const title=$("#naTitle").value.trim(), body=$("#naBody").value.trim();
   if(!title || !body){ toast("Add a title and a message"); return; }
-  must(await sb.from("announcements").insert({ title, body, pinned:$("#naPin").checked }));
-  $("#naTitle").value=""; $("#naBody").value=""; $("#naPin").checked=false;
+  must(await sb.from("announcements").insert({ title, body, pinned:$("#naPin").checked, game_slug:$("#naGame").value || null }));
+  $("#naTitle").value=""; $("#naBody").value=""; $("#naPin").checked=false; $("#naGame").value="";
   await loadNews(); renderAll(); toast("Announcement posted");
+}
+
+async function addGame(){
+  const name = $("#ngName").value.trim(); if(!name){ toast("Add a name for the game"); return; }
+  let base = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,26) || "game";
+  if(base.length < 2) base = base + "-game";
+  let slug = base, n = 2; while(gameBy(slug)) slug = `${base}-${n++}`;
+  const sort = Math.max(0, ...state.games.map(g => g.sort || 0)) + 10;
+  try{ must(await sb.from("games").insert({ slug, name, kind:$("#ngKind").value, color:$("#ngColor").value, sort })); }
+  catch(e){ handleError(e); return; }
+  $("#ngName").value = ""; await loadGames(); renderGamesTable(); renderAll(); toast(`${name} added`);
 }
 
 // Opens a printable sign-in sheet for one game night.
@@ -1204,6 +1346,11 @@ $("#csvFile").addEventListener("change", async ev => {
     const old = state.inventory.find(x => x.sku === row.sku) || {};
     if(ix("barcode") >= 0){ const b = String(r[ix("barcode")]||"").replace(/[^0-9Xx]/g,""); row.barcode = b || old.barcode || null; }
     if(ix("preorder") >= 0){ const v = String(r[ix("preorder")]||"").trim().toLowerCase(); row.preorder = v ? ["yes","y","true","1","x"].includes(v) : !!old.preorder; }
+    if(ix("game") >= 0){
+      const v = String(r[ix("game")]||"").trim().toLowerCase();
+      const match = v && state.games.find(g => g.slug === v || g.name.toLowerCase() === v || shortName(g.name).toLowerCase() === v);
+      row.game_slug = match ? match.slug : (old.game_slug || null);
+    }
     if(ix("release_date") >= 0){ const v = String(r[ix("release_date")]||"").trim(); row.release_date = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : (old.release_date || null); }
     if(row.sku && row.name) bySku.set(row.sku, row);
   });
@@ -1218,6 +1365,24 @@ async function uploadCsv(btn){
   $("#csvPreview").textContent=`Uploaded ${pendingRows.length} items.`; pendingRows=[]; $("#csvFile").value="";
   await loadProducts(); renderAll(); toast("Inventory uploaded");
 }
+
+/* ---------- fold-up staff forms ---------- */
+// Big forms start closed. Click the title to open. Each one remembers how you left it.
+document.querySelectorAll(".panel[data-fold]").forEach(panel => {
+  const h = panel.querySelector("h3"); if(!h) return;
+  const key = "titan-fold-" + panel.dataset.fold;
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "fold-btn";
+  btn.innerHTML = `<span>${h.innerHTML}</span><span class="fold-arrow" aria-hidden="true"></span>`;
+  h.innerHTML = ""; h.appendChild(btn); h.classList.add("fold-head");
+  const set = open => {
+    panel.classList.toggle("open", open); btn.setAttribute("aria-expanded", String(open));
+    try{ localStorage.setItem(key, open ? "1" : "0"); }catch(e){}
+  };
+  let open = false; try{ open = localStorage.getItem(key) === "1"; }catch(e){}
+  set(open);
+  btn.addEventListener("click", () => set(!panel.classList.contains("open")));
+});
 
 /* ---------- live updates ---------- */
 // Don't redraw the page while someone is typing or editing. Catch up when they're done.
@@ -1240,6 +1405,7 @@ function startLive(){
   on("posts", "board", loadBoard);
   on("replies", "board", loadBoard);
   on("site_settings", "settings", loadSettings);
+  on("games", "games", loadGames);
   on("reservations", "res", loadReservations);
   on("campaigns", "camps", loadCampaigns);
   on("campaign_members", "camps", loadCampaigns);
