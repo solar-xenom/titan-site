@@ -8,7 +8,9 @@
 /* Apply saved light/dark mode and last seasonal theme before the page draws */
 (function(){
   var m = "dark", s = "none";
-  try { m = localStorage.getItem("titan-mode") || "dark"; s = localStorage.getItem("titan-season") || "none"; } catch(e) {}
+  var l = "classic";
+  try { m = localStorage.getItem("titan-mode") || "dark"; s = localStorage.getItem("titan-season") || "none"; l = localStorage.getItem("titan-look") || "classic"; } catch(e) {}
+  document.documentElement.setAttribute("data-look", l);
   document.documentElement.setAttribute("data-mode", m);
   document.documentElement.setAttribute("data-season", s);
 })();
@@ -30,7 +32,7 @@
       <a href="#shop">Shop</a>
       <a href="#events">Game nights</a>
       <a href="#news">Announcements</a>
-      <a href="#board">Community</a>
+      <a href="#discuss">Community</a>
       <a href="#staff" id="staffLink" hidden>Staff</a>
       <a href="#account" id="accountLink">Log in</a>
     </nav>
@@ -118,10 +120,41 @@
     <div id="eventDetail"></div>
   </section>
 
+  <!-- DISCUSSION -->
+  <section class="view" id="view-discuss" hidden>
+    <h1>Community</h1>
+    <nav class="sub-tabs" aria-label="Community"><a href="#discuss" aria-current="page">Discussion</a><a href="#board">Find a group</a></nav>
+    <p class="muted">Show off your pulls, talk decks, ask questions, and hang out with other players.</p>
+
+    <div id="discLogin" class="panel" style="max-width:560px"><p style="margin:0"><a href="#account">Log in or make an account</a> to post, like, or reply.</p></div>
+    <div id="discNew" class="panel" data-fold="newdisc" style="max-width:720px" hidden>
+      <h3>New post</h3>
+      <div class="grid2">
+        <div class="field"><label for="dpKind">Type</label><select id="dpKind"></select></div>
+        <div class="field"><label for="dpGame">Game</label><select id="dpGame"></select></div>
+      </div>
+      <div class="field"><label for="dpTitle">Title</label><input type="text" id="dpTitle" maxlength="100" placeholder="Finally pulled the alt art!"></div>
+      <div class="field"><label for="dpBody">Details</label><textarea id="dpBody" rows="4" maxlength="2000" placeholder="Tell everyone about it"></textarea></div>
+      <div class="field">
+        <label class="btn small" style="cursor:pointer;display:inline-flex">Add photos (up to 4)<input type="file" id="dpPhotos" accept="image/*" multiple hidden></label>
+        <div id="dpPreview" class="photo-preview"></div>
+      </div>
+      <button class="btn primary" id="dpPost">Post</button>
+      <p class="note" style="margin-top:10px">Be kind. Photos of cards and games only. No photos of people without their permission. Staff can remove posts that break the rules.</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="chips" id="discKinds"></div>
+      <select id="dGame" aria-label="Filter by game" style="max-width:220px"></select>
+    </div>
+    <div id="discList"></div>
+  </section>
+
   <!-- COMMUNITY BOARD -->
   <section class="view" id="view-board" hidden>
-    <h1>Community board</h1>
-    <p class="muted">Find players for your campaign, a pod for Commander night, or just talk shop.</p>
+    <h1>Community</h1>
+    <nav class="sub-tabs" aria-label="Community"><a href="#discuss">Discussion</a><a href="#board" aria-current="page">Find a group</a></nav>
+    <p class="muted">Find players for your campaign or a pod for Commander night.</p>
 
     <div id="boardLogin" class="panel" style="max-width:560px"><p style="margin:0"><a href="#account">Log in or make an account</a> to post or reply.</p></div>
     <div id="boardNew" class="panel" style="max-width:720px" hidden>
@@ -254,11 +287,13 @@
         <label class="switch-row"><input type="checkbox" id="featPre"> <span><strong>Preorders</strong><br><span class="note">Customers reserve items marked "coming soon," like a new card set.</span></span></label>
         <button class="btn primary" id="featSave">Save features</button>
       </div>
-      <div class="panel" data-fold="theme" style="max-width:520px">
-        <h3>Seasonal theme</h3>
-        <p class="note">Changes the colors for every visitor in both light and dark mode. Christmas adds falling snow. Visitors still pick light or dark for themselves.</p>
-        <div class="field"><label for="seasonSel">Theme</label><select id="seasonSel"></select></div>
-        <button class="btn primary" id="seasonSave">Save theme</button>
+      <div class="panel" data-fold="theme" style="max-width:720px">
+        <h3>Look and holiday theme</h3>
+        <p class="note">These change the site for every visitor. Each look has a light and a dark version, and visitors still pick light or dark for themselves. A holiday theme sits on top of the look until you set it back to None.</p>
+        <label>Site look</label>
+        <div id="lookPicker" class="look-picker" role="radiogroup" aria-label="Site look"></div>
+        <div class="field" style="margin-top:14px"><label for="seasonSel">Holiday theme</label><select id="seasonSel"></select></div>
+        <button class="btn primary" id="seasonSave">Save look and theme</button>
       </div>
     </div>
 
@@ -334,7 +369,7 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</
           <div class="field"><label for="niGame">Game (optional)</label><select id="niGame"></select></div>
           <div class="field"><label for="niPrice">Price</label><input type="number" id="niPrice" min="0" step="0.01"></div>
           <div class="field"><label for="niQty">Qty</label><input type="number" id="niQty" min="0" step="1"></div>
-          <div class="field"><label for="niBarcode">Barcode (optional)</label><input type="text" id="niBarcode" inputmode="numeric" maxlength="32"></div>
+          <div class="field"><label for="niBarcode">Barcode (optional)</label><div class="scan-row"><input type="text" id="niBarcode" inputmode="numeric" maxlength="32"><button type="button" class="btn small" id="niScan">Scan</button></div></div>
           <div class="field"><label for="niRelease">Release date (preorders)</label><input type="date" id="niRelease"></div>
           <div class="field" style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;color:var(--ink)"><input type="checkbox" id="niPreorder"> Coming soon, open for preorder</label></div>
         </div>
@@ -344,7 +379,8 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</
       <div class="panel">
         <h3>Stock on hand</h3>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-          <input type="search" id="invSearch" placeholder="Filter" aria-label="Filter inventory" style="max-width:280px">
+          <input type="search" id="invSearch" placeholder="Filter by name, SKU, or barcode" aria-label="Filter inventory" style="max-width:300px">
+          <button class="btn small" id="invScan">Scan to find</button>
           <button class="btn small" id="csvDownload">Download as CSV</button>
         </div>
         <div class="table-wrap"><table class="stack">
@@ -419,6 +455,14 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</
   <p class="foot-line"><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#account">Staff login</a></p>
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="scanModal" class="scan-modal" hidden role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+  <div class="scan-box">
+    <h3 id="scanTitle">Scan a barcode</h3>
+    <div id="scanReader"></div>
+    <p class="note" id="scanHint">Hold the barcode inside the box. It scans on its own.</p>
+    <button class="btn" id="scanCancel" type="button">Cancel</button>
+  </div>
+</div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>

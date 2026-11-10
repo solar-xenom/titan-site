@@ -24,11 +24,40 @@ const must = ({data, error}) => { if(error) throw error; return data; };
 
 /* ---------- themes ---------- */
 // To add a new seasonal theme, add it here AND add its colors in the CSS (search for CHRISTMAS).
+// Holiday themes. To add one, add it here AND add its colors in styles.css (search for HOLIDAYS).
+// fx = the little things that drift down the screen.
 const SEASONS = {
-  none:      { label:"None (regular look)" },
-  christmas: { label:"Christmas", note:"Happy holidays from everyone at Titan!", snow:true },
-  halloween: { label:"Halloween", note:"Happy Halloween from Titan!" }
+  none:         { label:"None" },
+  newyear:      { label:"New Year's",        note:"Happy New Year from Titan!",                fx:{ chars:["■","●","▲"], colors:["#E8C35A","#C9CED6","#9B7BE0","#E8C35A"], count:34, min:6, max:10 } },
+  valentines:   { label:"Valentine's Day",   note:"Happy Valentine's Day from Titan!",          fx:{ chars:["♥"], colors:["#E85A8A","#C2185B","#F4A6C0"], count:26, min:12, max:22 } },
+  stpatricks:   { label:"St. Patrick's Day", note:"Happy St. Patrick's Day from Titan!",        fx:{ chars:["☘"], colors:["#3FBF6A","#1E8C45","#7FD99A"], count:24, min:14, max:24 } },
+  july4:        { label:"Fourth of July",    note:"Happy Fourth of July from Titan!",           fx:{ chars:["★","✦"], colors:["#D23A4A","#FFFFFF","#5A6FD6"], count:28, min:10, max:18 } },
+  halloween:    { label:"Halloween",         note:"Happy Halloween from Titan!",                fx:{ chars:["🦇"], count:10, min:16, max:26 } },
+  thanksgiving: { label:"Thanksgiving",      note:"Happy Thanksgiving from everyone at Titan!", fx:{ chars:["🍂","🍁"], count:18, min:16, max:26 } },
+  christmas:    { label:"Christmas",         note:"Happy holidays from everyone at Titan!", snow:true }
 };
+// Site looks. Colors live in styles.css (search for LOOKS). The swatches here are just for the picker.
+const LOOKS = {
+  classic:    { label:"Classic tavern", blurb:"Leather and parchment, the original look.", dark:["#14100D","#D9A845","#C2312F"], light:["#EFE2C6","#7A200D","#865A10"] },
+  arcane:     { label:"Arcane",         blurb:"Deep violet with glowing teal.",            dark:["#100E1F","#5FD3C6","#7B4FD6"], light:["#EEEAF7","#5B35B5","#1F7F78"] },
+  dragonfire: { label:"Dragonfire",     blurb:"Charcoal and ember orange.",                dark:["#141110","#F2A33A","#E2541C"], light:["#F5ECE3","#C2410C","#A0560E"] },
+  grove:      { label:"Elven grove",    blurb:"Forest green and bronze.",                  dark:["#0E1410","#C9A45C","#3E8E5A"], light:["#EDF2E6","#2F7348","#7A5B1E"] },
+  frost:      { label:"Frostpeak",      blurb:"Midnight blue and icy silver.",             dark:["#0E131A","#B9D7EA","#3B82C4"], light:["#EAF0F5","#2563A6","#356A8C"] }
+};
+function applyLook(l){
+  if(!LOOKS[l]) l = "classic";
+  state.look = l;
+  document.documentElement.setAttribute("data-look", l);
+  try{ localStorage.setItem("titan-look", l); }catch(e){}
+}
+function renderLookPicker(){
+  const cur = state.lookDraft || state.look || "classic";
+  $("#lookPicker").innerHTML = Object.entries(LOOKS).map(([k,v]) => `
+    <button type="button" class="look-card" role="radio" aria-checked="${k===cur}" data-look-pick="${k}">
+      <span class="look-swatches"><span class="sw-set">${v.dark.map(c => `<i style="background:${c}"></i>`).join("")}</span><span class="sw-set">${v.light.map(c => `<i style="background:${c}"></i>`).join("")}</span></span>
+      <strong>${esc(v.label)}</strong><span class="note">${esc(v.blurb)}</span>
+    </button>`).join("");
+}
 function applyMode(m){
   document.documentElement.setAttribute("data-mode", m);
   try{ localStorage.setItem("titan-mode", m); }catch(e){}
@@ -41,9 +70,13 @@ function applySeason(s){
   state.season = s;
   document.documentElement.setAttribute("data-season", s);
   try{ localStorage.setItem("titan-season", s); }catch(e){}
+  const fx = SEASONS[s].fx, pick = arr => arr[Math.floor(Math.random()*arr.length)];
   $("#season-fx").innerHTML = SEASONS[s].snow ? Array.from({length:40}, () => {
     const size = (2 + Math.random()*4).toFixed(1);
     return `<i style="--s:${size};left:${(Math.random()*100).toFixed(1)}%;width:${size}px;height:${size}px;opacity:${(0.4+Math.random()*0.5).toFixed(2)};animation-duration:${(9+Math.random()*10).toFixed(1)}s;animation-delay:-${(Math.random()*19).toFixed(1)}s;--dx:${Math.round(Math.random()*80-40)}px">❄</i>`;
+  }).join("") : fx ? Array.from({length:fx.count || 24}, () => {
+    const size = Math.round(fx.min + Math.random()*(fx.max - fx.min));
+    return `<i class="g" style="left:${(Math.random()*100).toFixed(1)}%;font-size:${size}px;${fx.colors ? `color:${pick(fx.colors)};` : ""}opacity:${(0.5+Math.random()*0.45).toFixed(2)};animation-duration:${(10+Math.random()*10).toFixed(1)}s;animation-delay:-${(Math.random()*20).toFixed(1)}s;--dx:${Math.round(Math.random()*120-60)}px;--rot:${Math.round(Math.random()*720-360)}deg">${pick(fx.chars)}</i>`;
   }).join("") : "";
   $("#seasonNote").textContent = SEASONS[s].note || "";
   $("#seasonSel").value = s;
@@ -51,7 +84,7 @@ function applySeason(s){
 async function loadSettings(){
   const { data, error } = await sb.from("site_settings").select("*").eq("id", 1).maybeSingle();
   if(!error && data){
-    applySeason(data.season);
+    applySeason(data.season); applyLook(data.look);
     state.feat = { holds: data.holds_enabled !== false, preorders: data.preorders_enabled !== false, fb: data.facebook_url || "" };
     if(data.address || data.hours){
       state.store = { address:data.address || DEFAULT_STORE.address, phone:data.phone || "", hours:data.hours || DEFAULT_STORE.hours, note:data.hours_note || "" };
@@ -106,7 +139,7 @@ function renderStore(){
   $("#openNow").innerHTML = `<span class="dot ${os.open?"on":""}"></span>${esc(os.text)}${st.note ? ` <span class="open-note">${esc(st.note)}</span>` : ""}`;
 }
 function renderStoreForm(){
-  renderGamesTable();
+  renderGamesTable(); renderLookPicker();
   const st = state.store;
   $("#siAddress").value = st.address; $("#siPhone").value = st.phone; $("#siNote").value = st.note;
   $("#siFb").value = state.feat.fb || ""; $("#featHolds").checked = state.feat.holds; $("#featPre").checked = state.feat.preorders;
@@ -163,6 +196,8 @@ function fillGameSelects(){
   set("#shopGame", `<option value="">All games</option>` + activeGames().map(g => `<option value="${g.slug}">${esc(g.name)}</option>`).join(""));
   set("#npGame", boardGameOptions(null, false));
   set("#bGame", boardGameOptions(null, true));
+  set("#dGame", boardGameOptions(null, true));
+  set("#dpGame", boardGameOptions(null, false).replace('<option value="other" >Other</option>','<option value="other">General / not about one game</option>'));
 }
 async function loadGames(){
   const rows = must(await sb.from("games").select("*").order("sort").order("name"));
@@ -192,7 +227,8 @@ function renderGameHub(){
   const pre = state.inventory.filter(i => i.game_slug === g.slug && i.preorder);
   const stock = state.inventory.filter(i => i.game_slug === g.slug && !i.preorder && i.qty > 0).sort((a,b) => b.updatedAt - a.updatedAt);
   const news = sortedNews().filter(n => n.game_slug === g.slug).slice(0, 3);
-  const posts = state.posts.filter(p => p.game === g.slug && p.status === "open").slice(0, 4);
+  const posts = state.posts.filter(p => p.game === g.slug && !isDisc(p) && p.status === "open").slice(0, 4);
+  const talk = state.posts.filter(p => p.game === g.slug && isDisc(p)).slice(0, 4);
   const camps = g.kind === "rpg" ? state.campaigns.filter(c => c.status === "recruiting" || c.status === "full") : [];
   const items = list => { const img = list.some(i => i.image_url); return `<div class="items">${list.map(i => itemTag(i, img)).join("")}</div>`; };
   const sec = (title, link, body) => `<section class="hub-sec"><div class="hub-sec-head"><h2>${title}</h2>${link || ""}</div>${body}</section>`;
@@ -208,14 +244,18 @@ function renderGameHub(){
   html += sec("In stock", stock.length ? `<a href="#shop" data-shopgame="${esc(g.slug)}">See all ${esc(short)} items →</a>` : "",
     stock.length ? items(stock.slice(0, 8)) : `<div class="empty">Nothing listed for ${esc(short)} right now. Ask at the counter!</div>`);
   if(news.length) html += sec("News", `<a href="#news">All announcements →</a>`, news.map(n => postHtml(n, false)).join(""));
-  html += sec("Community", `<a href="#board" data-boardgame="${esc(g.slug)}">Go to the board →</a>`,
-    posts.length ? `<div class="hub-posts">${posts.map(p => `<a class="hub-post" href="#board" data-boardgame="${esc(g.slug)}"><span class="pill kind">${esc(KINDS[p.kind]||"Post")}</span><strong>${esc(p.title)}</strong><span class="note">${esc(p.author_name)}, ${esc(timeAgo(p.created_at))}</span></a>`).join("")}</div>`
-      : `<div class="empty">No ${esc(short)} posts yet. <a href="#board" data-boardgame="${esc(g.slug)}">Find a group or start a conversation.</a></div>`);
+  const mini = (p, href, attr) => `<a class="hub-post" href="${href}" ${attr}="${esc(g.slug)}">${p.images && p.images[0] ? `<img class="hub-thumb" src="${esc(p.images[0])}" alt="" loading="lazy">` : ""}<span class="pill kind">${esc(KINDS[p.kind]||"Post")}</span><strong>${esc(p.title)}</strong><span class="note">${esc(p.author_name)}, ${esc(timeAgo(p.created_at))}${isDisc(p) && likeCount(p.id) ? `, ♥ ${likeCount(p.id)}` : ""}</span></a>`;
+  html += sec("From the community", `<a href="#discuss" data-dgame="${esc(g.slug)}">All ${esc(short)} posts →</a>`,
+    talk.length ? `<div class="hub-posts">${talk.map(p => mini(p, "#discuss", "data-dgame")).join("")}</div>`
+      : `<div class="empty">No ${esc(short)} posts yet. <a href="#discuss" data-dgame="${esc(g.slug)}">Show off a pull or start a conversation.</a></div>`);
+  html += sec("Looking for a group", `<a href="#board" data-boardgame="${esc(g.slug)}">Find a group →</a>`,
+    posts.length ? `<div class="hub-posts">${posts.map(p => mini(p, "#board", "data-boardgame")).join("")}</div>`
+      : `<div class="empty">Nobody's looking right now. <a href="#board" data-boardgame="${esc(g.slug)}">Post that you're looking for players.</a></div>`);
   $("#gameHub").innerHTML = html;
 }
 
 /* ---------- routing ---------- */
-const VIEWS = ["home","shop","events","event","game","news","board","account","staff"];
+const VIEWS = ["home","shop","events","event","game","news","discuss","board","account","staff"];
 function closeMenu(){ document.querySelector("header.top").classList.remove("open"); $("#menuBtn").setAttribute("aria-expanded","false"); }
 function route(){
   closeMenu();
@@ -238,6 +278,7 @@ function route(){
   if(v==="account") document.querySelector('nav.tabs a[href="#account"]').setAttribute("aria-current","page");
   if(v==="event"){ document.querySelector('nav.tabs a[href="#events"]').setAttribute("aria-current","page"); showEventDetail(); }
   if(v==="game") renderGameHub();
+  if(v==="board") document.querySelector('nav.tabs a[href="#discuss"]').setAttribute("aria-current","page");
   $("#teamChip").hidden = !state.isOwner;
   $("#lookChip").hidden = !state.isOwner;
   $("#csvPanel").hidden = !state.isOwner;
@@ -628,7 +669,7 @@ function itemMoreRow(i){
     <div>
       <div class="grid3">
         <div class="field"><label>Game</label><select class="inline-in" data-field="game_slug" data-sku="${esc(i.sku)}" aria-label="Game for ${esc(i.name)}">${gameOptions(i.game_slug || "", "None (any game)")}</select></div>
-        <div class="field"><label>Barcode</label><input type="text" class="inline-in" inputmode="numeric" maxlength="32" value="${esc(i.barcode||"")}" data-field="barcode" data-sku="${esc(i.sku)}" aria-label="Barcode for ${esc(i.name)}"></div>
+        <div class="field"><label>Barcode</label><div class="scan-row"><input type="text" class="inline-in" inputmode="numeric" maxlength="32" value="${esc(i.barcode||"")}" data-field="barcode" data-sku="${esc(i.sku)}" aria-label="Barcode for ${esc(i.name)}"><button type="button" class="btn small" data-scanfor="${esc(i.sku)}">Scan</button></div></div>
         <div class="field"><label>Release date</label><input type="date" class="inline-in" value="${esc(i.release_date||"")}" data-field="release_date" data-sku="${esc(i.sku)}" aria-label="Release date for ${esc(i.name)}"></div>
         <div class="field" style="display:flex;align-items:flex-end"><label style="display:flex;gap:8px;align-items:center;margin:0 0 10px;color:var(--ink)"><input type="checkbox" data-field="preorder" data-sku="${esc(i.sku)}" ${i.preorder?"checked":""}> Coming soon, preorder</label></div>
       </div>
@@ -663,7 +704,7 @@ function shrinkImage(file, maxSide = 1000){
 }
 function renderInventoryTable(){
   const q = $("#invSearch").value.trim().toLowerCase();
-  const list = state.inventory.filter(i => !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q))
+  const list = state.inventory.filter(i => !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || (i.barcode||"").includes(q))
     .sort((a,b)=>a.name.localeCompare(b.name));
   $("#invTable").innerHTML = list.length ? list.map(i => `<tr><td data-label="SKU">${esc(i.sku)}</td>
     <td data-label="Name"><input type="text" class="inline-in name-in" maxlength="120" value="${esc(i.name)}" data-field="name" data-sku="${esc(i.sku)}" aria-label="Name for ${esc(i.sku)}"></td>
@@ -809,14 +850,19 @@ function renderFb(){
 
 function renderAll(){
   state.pendingRender = false;
-  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderEventDetail(); renderCampaigns(); renderFb(); renderStore(); renderGameHub();
+  renderHome(); renderShop(); renderEvents(); renderNews(); renderAccount(); renderBoard(); renderDiscuss(); renderEventDetail(); renderCampaigns(); renderFb(); renderStore(); renderGameHub();
   if(state.isStaff){ renderInventoryTable(); renderStaffEvents(); renderStaffNews(); renderTeam(); renderBlocked(); renderRes(); }
 }
 
 /* ---------- community board ---------- */
-const KINDS = { lfp:"Looking for players", lfg:"Looking for a group", talk:"Discussion" };
+const LFG_KINDS  = { lfp:"Looking for players", lfg:"Looking for a group" };
+const DISC_KINDS = { pull:"Pulls & collection", talk:"Discussion", deck:"Deck help", question:"Question" };
+const KINDS = { ...LFG_KINDS, ...DISC_KINDS };
+const isDisc = p => !!DISC_KINDS[p.kind];
+state.dKind = "all"; state.dpFiles = []; state.likes = [];
 
-$("#npKind").innerHTML = Object.entries(KINDS).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+$("#npKind").innerHTML = Object.entries(LFG_KINDS).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+$("#dpKind").innerHTML = Object.entries(DISC_KINDS).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
 fillGameSelects();
 
 function timeAgo(iso){
@@ -829,20 +875,48 @@ async function loadBoard(){
   state.posts = must(await sb.from("posts").select("*").order("created_at", { ascending:false }).limit(200));
   const ids = state.posts.map(p => p.id);
   state.replies = ids.length ? must(await sb.from("replies").select("*").in("post_id", ids).order("created_at")) : [];
+  state.likes = ids.length ? must(await sb.from("post_likes").select("post_id,user_id").in("post_id", ids)) : [];
 }
 function renderBoard(){
   $("#boardLogin").hidden = !!state.user;
   $("#boardNew").hidden = !state.user || state.amBlocked;
   $("#boardLogin").innerHTML = state.amBlocked ? `<p style="margin:0">Your account can't post on the community board right now. Please talk to the store.</p>` : `<p style="margin:0"><a href="#account">Log in or make an account</a> to post or reply.</p>`;
   $("#boardLogin").hidden = !!state.user && !state.amBlocked;
-  $("#boardKinds").innerHTML = [["all","All posts"], ...Object.entries(KINDS)]
+  $("#boardKinds").innerHTML = [["all","All posts"], ...Object.entries(LFG_KINDS)]
     .map(([k,l]) => `<button class="chip" data-bkind="${k}" aria-pressed="${state.bKind===k}">${esc(l)}</button>`).join("");
   const game = $("#bGame").value || "all", showClosed = $("#bClosed").checked;
-  const list = state.posts.filter(p =>
+  const list = state.posts.filter(p => !isDisc(p) &&
     (state.bKind==="all" || p.kind===state.bKind) && (game==="all" || p.game===game) && (showClosed || p.status==="open"));
   $("#boardList").innerHTML = list.length ? list.map(postCard).join("") :
-    `<div class="empty">${state.posts.length ? "No posts match those filters." : "No posts yet. Be the first to find your party!"}</div>`;
+    `<div class="empty">${state.posts.some(p => !isDisc(p)) ? "No posts match those filters." : "No posts yet. Be the first to find your party!"}</div>`;
 }
+
+/* ---------- discussion page ---------- */
+function renderDiscuss(){
+  $("#discLogin").innerHTML = state.amBlocked ? `<p style="margin:0">Your account can't post right now. Please talk to the store.</p>` : `<p style="margin:0"><a href="#account">Log in or make an account</a> to post, like, or reply.</p>`;
+  $("#discLogin").hidden = !!state.user && !state.amBlocked;
+  $("#discNew").hidden = !state.user || state.amBlocked;
+  $("#discKinds").innerHTML = [["all","Everything"], ...Object.entries(DISC_KINDS)]
+    .map(([k,l]) => `<button class="chip" data-dkind="${k}" aria-pressed="${state.dKind===k}">${esc(l)}</button>`).join("");
+  const game = $("#dGame").value || "all";
+  const list = state.posts.filter(p => isDisc(p) && (state.dKind==="all" || p.kind===state.dKind) && (game==="all" || p.game===game));
+  $("#discList").innerHTML = list.length ? list.map(postCard).join("") :
+    `<div class="empty">${state.posts.some(isDisc) ? "No posts match those filters." : "Nothing here yet. Show off your best pull!"}</div>`;
+  renderPhotoPreview();
+}
+function renderPhotoPreview(){
+  $("#dpPreview").innerHTML = state.dpFiles.map((f,i) => `<span class="pp"><img src="${f.url}" alt=""><button type="button" class="x" data-rmpp="${i}" aria-label="Remove photo">×</button></span>`).join("");
+}
+$("#dGame").addEventListener("change", renderDiscuss);
+$("#dpPhotos").addEventListener("change", ev => {
+  const files = [...ev.target.files].filter(f => f.type.startsWith("image/"));
+  for(const f of files){ if(state.dpFiles.length >= 4){ toast("Up to 4 photos per post"); break; } state.dpFiles.push({ file:f, url:URL.createObjectURL(f) }); }
+  ev.target.value = ""; renderPhotoPreview();
+});
+const likeCount = id => state.likes.filter(l => l.post_id === id).length;
+const iLiked = id => !!state.user && state.likes.some(l => l.post_id === id && l.user_id === state.user.id);
+// Turns a stored photo link back into its storage path so it can be deleted with the post.
+const photoPath = url => { const m = String(url).split("/storage/v1/object/public/post-photos/")[1]; return m ? decodeURIComponent(m.split("?")[0]) : null; };
 function postCard(p){
   const mine = state.user && p.user_id === state.user.id;
   const canRemove = mine || state.isStaff;
@@ -850,7 +924,7 @@ function postCard(p){
   if(state.editing === p.id){
     return `<article class="bpost ${p.kind}">
       <div class="grid2">
-        <div class="field"><label>Type</label><select id="ed-kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${p.kind===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
+        <div class="field"><label>Type</label><select id="ed-kind">${Object.entries(isDisc(p) ? DISC_KINDS : LFG_KINDS).map(([k,v])=>`<option value="${k}" ${p.kind===k?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
         <div class="field"><label>Game</label><select id="ed-game">${boardGameOptions(p.game, false)}</select></div>
       </div>
       <div class="field"><label>Title</label><input type="text" id="ed-title" maxlength="100" value="${esc(p.title)}"></div>
@@ -863,9 +937,11 @@ function postCard(p){
     <h3>${esc(p.title)}</h3>
     <div class="byline">${esc(p.author_name)}, ${esc(timeAgo(p.created_at))}${p.updated_at && p.updated_at !== p.created_at ? " (edited)" : ""}</div>
     <div class="body">${esc(p.body)}</div>
+    ${p.images && p.images.length ? `<div class="post-photos n${Math.min(p.images.length,4)}">${p.images.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Photo posted by ${esc(p.author_name)}" loading="lazy"></a>`).join("")}</div>` : ""}
+    ${isDisc(p) ? `<div class="bactions"><button class="btn small like-btn ${iLiked(p.id)?"liked":""}" data-like="${esc(p.id)}" aria-pressed="${iLiked(p.id)}" aria-label="Like">♥ ${likeCount(p.id)}</button></div>` : ""}
     ${canRemove ? `<div class="bactions">
       ${mine ? `<button class="btn small" data-edit="${esc(p.id)}">Edit</button>
-      <button class="btn small" data-status="${esc(p.id)}" data-to="${p.status==="open"?"closed":"open"}">${p.status==="open" ? (p.kind==="talk" ? "Close" : "Found them, close post") : "Reopen"}</button>` : ""}
+      <button class="btn small" data-status="${esc(p.id)}" data-to="${p.status==="open"?"closed":"open"}">${p.status==="open" ? (isDisc(p) ? "Close replies" : "Found them, close post") : "Reopen"}</button>` : ""}
       <button class="btn small danger" data-del-post="${esc(p.id)}">${mine ? "Delete" : "Remove (staff)"}</button>${mine ? "" : blockBtn(p.user_id, p.author_name)}</div>` : ""}
     <details class="replies" ${reps.length && reps.length <= 3 ? "open" : ""}>
       <summary>${reps.length ? `${reps.length} repl${reps.length===1?"y":"ies"}` : "Reply"}</summary>
@@ -887,14 +963,37 @@ document.addEventListener("click", async ev => {
   if(t.closest("nav.tabs")) closeMenu();
   if(t.dataset.cat !== undefined){ state.shopCat = t.dataset.cat; renderShop(); return; }
   if(t.dataset.bkind){ state.bKind = t.dataset.bkind; renderBoard(); return; }
+  if(t.dataset.dkind){ state.dKind = t.dataset.dkind; renderDiscuss(); return; }
+  if(t.dataset.dgame){ $("#dGame").value = t.dataset.dgame; state.dKind = "all"; renderDiscuss(); }
+  if(t.dataset.rmpp !== undefined){ const f = state.dpFiles.splice(Number(t.dataset.rmpp), 1)[0]; if(f) URL.revokeObjectURL(f.url); renderPhotoPreview(); return; }
   if(t.dataset.edit){ state.editing = t.dataset.edit; renderBoard(); return; }
   if(t.dataset.editCancel){ state.editing = null; renderBoard(); return; }
   if(t.dataset.staff === "look") renderStoreForm();
+  if(t.dataset.lookPick){ state.lookDraft = t.dataset.lookPick; applyLook(t.dataset.lookPick); renderLookPicker(); toast("Previewing. Click Save to keep it for everyone."); return; }
   if(t.dataset.evfilter){ state.evGame = t.dataset.evfilter; renderEvents(); return; }
   if(t.dataset.evgame){ state.evGame = t.dataset.evgame; renderEvents(); }
   if(t.dataset.shopgame){ $("#shopGame").value = t.dataset.shopgame; state.shopCat = "all"; renderShop(); }
   if(t.dataset.boardgame){ $("#bGame").value = t.dataset.boardgame; renderBoard(); }
   if(t.id === "ngAdd"){ addGame(); return; }
+  if(t.id === "niScan"){
+    const code = await scanBarcode("Scan the new item"); if(!code) return;
+    const existing = state.inventory.find(i => i.barcode === code);
+    if(existing && confirm(`"${existing.name}" already has this barcode. Go to it instead?`)){ showItem(existing); return; }
+    prepareNewItem(code); return;
+  }
+  if(t.id === "invScan"){
+    const code = await scanBarcode("Scan to find an item"); if(!code) return;
+    const it = state.inventory.find(i => i.barcode === code);
+    if(it){ showItem(it); toast(`Found ${it.name}`); return; }
+    if(confirm(`Barcode ${code} isn't in your inventory yet. Add it as a new item?`)) prepareNewItem(code);
+    return;
+  }
+  if(t.dataset.scanfor){
+    const code = await scanBarcode("Scan this item's barcode"); if(!code) return;
+    const box = document.querySelector(`[data-field="barcode"][data-sku="${CSS.escape(t.dataset.scanfor)}"]`);
+    if(box){ box.value = code; box.dispatchEvent(new Event("change", { bubbles:true })); }
+    return;
+  }
   if(t.dataset.resfilter){ state.resFilter = t.dataset.resfilter; renderRes(); return; }
   if(t.dataset.reserve){ state.reserve = { sku:t.dataset.reserve, kind:t.dataset.kind }; renderHome(); renderShop(); return; }
   if(t.dataset.reserveCancel){ state.reserve = null; renderHome(); renderShop(); return; }
@@ -925,6 +1024,36 @@ document.addEventListener("click", async ev => {
       if(!data.session){ $("#loginMsg").textContent = "Check your email to confirm your account, then come back and log in."; return; }
       $("#loginMsg").textContent = ""; toast(`Welcome, ${name}!`);
     }
+    else if(t.id==="dpPost"){
+      const title = $("#dpTitle").value.trim(), body = $("#dpBody").value.trim();
+      if(!title || !body){ toast("Add a title and some details"); return; }
+      t.disabled = true; const uploaded = [];
+      try{
+        for(const [i, f] of state.dpFiles.entries()){
+          toast(`Uploading photo ${i+1} of ${state.dpFiles.length}...`);
+          const blob = await shrinkImage(f.file, 1400);
+          const path = `${state.user.id}/${Date.now()}-${i}.jpg`;
+          const up = await sb.storage.from("post-photos").upload(path, blob, { contentType:"image/jpeg" });
+          if(up.error) throw up.error;
+          uploaded.push(sb.storage.from("post-photos").getPublicUrl(path).data.publicUrl);
+        }
+        must(await sb.from("posts").insert({ kind:$("#dpKind").value, game:$("#dpGame").value, title, body, images:uploaded }));
+        state.dpFiles.forEach(f => URL.revokeObjectURL(f.url)); state.dpFiles = [];
+        $("#dpTitle").value = ""; $("#dpBody").value = "";
+        await loadBoard(); renderAll(); toast("Posted!");
+      }catch(e){
+        if(uploaded.length) sb.storage.from("post-photos").remove(uploaded.map(photoPath).filter(Boolean));
+        handleError(e);
+      }finally{ t.disabled = false; }
+    }
+    else if(t.dataset.like){
+      if(!state.user){ toast("Log in to like posts"); return; }
+      const id = t.dataset.like;
+      if(iLiked(id)) must(await sb.from("post_likes").delete().eq("post_id", id).eq("user_id", state.user.id));
+      else must(await sb.from("post_likes").insert({ post_id:id }));
+      state.likes = must(await sb.from("post_likes").select("post_id,user_id").in("post_id", state.posts.map(p => p.id)));
+      renderDiscuss(); renderGameHub();
+    }
     else if(t.id==="postBtn"){
       const title = $("#npTitle").value.trim(), body = $("#npBody").value.trim();
       if(!title || !body){ toast("Add a title and some details"); return; }
@@ -946,7 +1075,12 @@ document.addEventListener("click", async ev => {
       await loadBoard(); renderBoard(); toast(t.dataset.to==="closed" ? "Post closed" : "Post reopened");
     }
     else if(t.dataset.delPost){
-      if(confirm("Delete this post and its replies?")){ must(await sb.from("posts").delete().eq("id", t.dataset.delPost)); await loadBoard(); renderBoard(); toast("Post deleted"); }
+      if(confirm("Delete this post and its replies?")){
+        const post = state.posts.find(x => x.id === t.dataset.delPost);
+        must(await sb.from("posts").delete().eq("id", t.dataset.delPost));
+        const paths = (post?.images || []).map(photoPath).filter(Boolean);
+        if(paths.length) sb.storage.from("post-photos").remove(paths);
+        await loadBoard(); renderAll(); toast("Post deleted"); }
     }
     else if(t.dataset.reply){
       const box = document.getElementById("reply-" + t.dataset.reply), body = box.value.trim();
@@ -1132,9 +1266,10 @@ document.addEventListener("click", async ev => {
       state.editNews = null; await loadNews(); renderAll(); toast("Announcement updated");
     }
     else if(t.id==="seasonSave"){
-      const v = $("#seasonSel").value;
-      must(await sb.from("site_settings").update({ season:v, updated_at:nowIso() }).eq("id", 1));
-      applySeason(v); toast(`Theme set to ${SEASONS[v].label}`);
+      const v = $("#seasonSel").value, l = state.lookDraft || state.look || "classic";
+      must(await sb.from("site_settings").update({ season:v, look:l, updated_at:nowIso() }).eq("id", 1));
+      state.lookDraft = null; applySeason(v); applyLook(l); renderLookPicker();
+      toast(`Saved: ${LOOKS[l].label}${v !== "none" ? ` with ${SEASONS[v].label}` : ""}`);
     }
     else if(t.id==="requestBtn"){
       must(await sb.from("staff_requests").insert({ user_id:state.user.id, name:myName(), email:state.user.email }));
@@ -1259,8 +1394,13 @@ async function addItem(){
   if(state.inventory.some(i => i.sku === sku) && !confirm(`An item with SKU ${sku} already exists. Replace it?`)) return;
   must(await sb.from("products").upsert({ sku, name, category:$("#niCat").value, price:parseFloat($("#niPrice").value)||0, qty:Math.max(0, parseInt($("#niQty").value,10)||0),
     game_slug:$("#niGame").value || null, barcode:$("#niBarcode").value.replace(/[^0-9Xx]/g,"") || null, preorder:$("#niPreorder").checked, release_date:$("#niRelease").value || null, updated_at:nowIso() }));
+  const cands = state.addCands && state.addCands.barcode === $("#niBarcode").value.replace(/[^0-9Xx]/g,"") ? state.addCands : null;
   ["#niSku","#niName","#niPrice","#niQty","#niBarcode","#niRelease"].forEach(s=>$(s).value=""); $("#niPreorder").checked = false;
-  await loadProducts(); renderAll(); toast("Item added");
+  state.addCands = null;
+  await loadProducts();
+  if(cands){ state.expandItem = sku; state.photoCands = { sku, images:cands.images, title:cands.title }; }
+  renderAll(); toast(cands ? "Item added. Pick a photo below." : "Item added");
+  if(cands) setTimeout(() => document.querySelector("tr.item-more")?.scrollIntoView({ behavior:"smooth", block:"center" }), 50);
 }
 async function addEvent(){
   const title=$("#neTitle").value.trim(), date=$("#neDate").value, time=$("#neTime").value;
@@ -1366,6 +1506,70 @@ async function uploadCsv(btn){
   await loadProducts(); renderAll(); toast("Inventory uploaded");
 }
 
+/* ---------- barcode scanning with the phone camera ---------- */
+// The scanner library only loads the first time someone taps Scan.
+function loadScanLib(){
+  if(window.Html5Qrcode) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js";
+    sc.onload = resolve; sc.onerror = () => reject(new Error("Couldn't load the scanner. Check your internet connection."));
+    document.head.appendChild(sc);
+  });
+}
+async function scanBarcode(title){
+  if(!window.isSecureContext){ toast("Camera scanning needs the live site (https). Type the barcode for now."); return null; }
+  try{ await loadScanLib(); }catch(e){ toast(e.message); return null; }
+  $("#scanTitle").textContent = title || "Scan a barcode";
+  $("#scanModal").hidden = false;
+  const F = window.Html5QrcodeSupportedFormats;
+  const scanner = new Html5Qrcode("scanReader", { verbose:false,
+    formatsToSupport:[F.EAN_13, F.UPC_A, F.UPC_E, F.EAN_8, F.CODE_128, F.CODE_39],
+    experimentalFeatures:{ useBarCodeDetectorIfSupported:true } });
+  return new Promise(resolve => {
+    let finished = false;
+    const done = async code => {
+      if(finished) return; finished = true;
+      try{ await scanner.stop(); }catch(e){} try{ scanner.clear(); }catch(e){}
+      $("#scanModal").hidden = true; resolve(code);
+    };
+    $("#scanCancel").onclick = () => done(null);
+    scanner.start({ facingMode:"environment" },
+      { fps:12, qrbox:(w, h) => ({ width:Math.round(Math.min(w*0.9, 380)), height:Math.round(Math.min(h*0.45, 170)) }) },
+      text => { const code = String(text).replace(/[^0-9Xx]/g,""); if(code.length >= 6){ if(navigator.vibrate) navigator.vibrate(60); done(code); } },
+      () => {}
+    ).catch(() => { toast("Couldn't open the camera. Allow camera access for this site and try again."); done(null); });
+  });
+}
+function openFold(key){
+  const panel = document.querySelector(`.panel[data-fold="${key}"]`);
+  if(panel && !panel.classList.contains("open")) panel.querySelector(".fold-btn")?.click();
+  return panel;
+}
+function showItem(it){
+  state.expandItem = it.sku; state.photoCands = null;
+  $("#invSearch").value = it.barcode || it.sku; renderInventoryTable();
+  setTimeout(() => document.querySelector("tr.item-more")?.scrollIntoView({ behavior:"smooth", block:"center" }), 50);
+}
+// Fill the Add one item form from a scanned barcode and look up the product.
+async function prepareNewItem(code){
+  const panel = openFold("additem");
+  $("#niBarcode").value = code;
+  if(!$("#niSku").value.trim()) $("#niSku").value = code;
+  panel?.scrollIntoView({ behavior:"smooth", block:"start" });
+  state.addCands = null;
+  try{
+    const { data, error } = await sb.functions.invoke("photo-lookup", { body:{ action:"lookup", barcode:code } });
+    if(!error && data){
+      if(data.title && !$("#niName").value.trim()) $("#niName").value = data.title;
+      if(data.images && data.images.length) state.addCands = { barcode:code, images:data.images, title:data.title || "" };
+      toast(data.title ? `Found: ${data.title}. Add the price and quantity.` : "Scanned. Fill in the name, price, and quantity.");
+      return;
+    }
+  }catch(e){}
+  toast("Scanned. Fill in the name, price, and quantity.");
+}
+
 /* ---------- fold-up staff forms ---------- */
 // Big forms start closed. Click the title to open. Each one remembers how you left it.
 document.querySelectorAll(".panel[data-fold]").forEach(panel => {
@@ -1404,6 +1608,7 @@ function startLive(){
   on("announcements", "news", loadNews);
   on("posts", "board", loadBoard);
   on("replies", "board", loadBoard);
+  on("post_likes", "board", loadBoard);
   on("site_settings", "settings", loadSettings);
   on("games", "games", loadGames);
   on("reservations", "res", loadReservations);
