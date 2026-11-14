@@ -36,6 +36,16 @@
       <a href="#staff" id="staffLink" hidden>Staff</a>
       <a href="#account" id="accountLink">Log in</a>
     </nav>
+    <div class="bell-wrap" id="bellWrap" hidden>
+      <button class="bell-btn" id="bellBtn" type="button" aria-expanded="false" aria-controls="bellPanel" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="bell-count" id="bellCount" hidden></span>
+      </button>
+      <div class="bell-panel" id="bellPanel" hidden>
+        <div class="bell-head"><strong>Notifications</strong><button type="button" class="linkish" id="bellReadAll">Mark all read</button></div>
+        <div id="bellList"></div>
+      </div>
+    </div>
     <button class="mode-btn" id="modeBtn" type="button"></button>
   </div>
 </header>
@@ -91,6 +101,11 @@
     <p class="muted">Pick a night and save your seat. Bring your deck or your character sheet.</p>
     <div class="chips" id="evFilters" style="margin:14px 0 18px"></div>
     <div id="evList" class="ev-list"></div>
+
+    <div class="winners-sec" id="winnersSec" hidden>
+      <h2>Recent winners</h2>
+      <div id="winnersList" class="winners"></div>
+    </div>
 
     <div class="campaigns">
       <div class="camp-head">
@@ -177,6 +192,29 @@
     <div id="boardList"></div>
   </section>
 
+  <!-- CONTACT -->
+  <section class="view" id="view-contact" hidden>
+    <h1>Contact us</h1>
+    <p class="muted">Questions about stock, events, or anything else? Send the store a message and we'll get back to you.</p>
+    <div class="panel" style="max-width:640px">
+      <div id="ctGuest">
+        <div class="grid2">
+          <div class="field"><label for="ctName">Your name</label><input type="text" id="ctName" maxlength="60" autocomplete="name"></div>
+          <div class="field"><label for="ctContact">Email or phone</label><input type="text" id="ctContact" maxlength="120" autocomplete="email"></div>
+        </div>
+        <p class="note" style="margin-top:-4px"><a href="#account">Log in</a> to see replies right on the site.</p>
+      </div>
+      <p id="ctMember" class="note" hidden></p>
+      <div class="field"><label for="ctSubject">Subject</label><input type="text" id="ctSubject" maxlength="120" placeholder="Do you have the new Commander precons?"></div>
+      <div class="field"><label for="ctBody">Message</label><textarea id="ctBody" rows="5" maxlength="3000"></textarea></div>
+      <button class="btn primary" id="ctSend">Send message</button>
+    </div>
+    <div class="panel" style="max-width:640px">
+      <h3>Visit or call</h3>
+      <p id="ctStore" style="margin:0"></p>
+    </div>
+  </section>
+
   <!-- ACCOUNT -->
   <section class="view" id="view-account" hidden>
     <h1>Your account</h1>
@@ -208,12 +246,41 @@
     <div id="meArea" hidden>
       <div class="panel" style="max-width:560px">
         <h3>Profile</h3>
-        <p class="note" id="meEmail"></p>
-        <div class="field"><label for="meName">Display name</label><input type="text" id="meName" maxlength="60"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn primary" id="meSave">Save name</button>
+        <div class="me-head">
+          <span id="meAvatar"></span>
+          <div><strong id="meNameShow"></strong><p class="note" id="meEmail" style="margin:0"></p>
+            <p class="note" style="margin:2px 0 0">Need your name changed? Ask staff at the store or <a href="#contact">send a message</a>.</p></div>
+        </div>
+        <label style="margin-top:14px">Profile icon</label>
+        <div id="iconPicker" class="icon-picker" role="radiogroup" aria-label="Profile icon"></div>
+        <label style="margin-top:12px">Icon color</label>
+        <div id="colorPicker" class="color-picker" role="radiogroup" aria-label="Icon color"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
           <button class="btn" id="logoutBtn">Log out</button>
         </div>
+      </div>
+      <div class="panel" style="max-width:560px">
+        <h3>Appearance</h3>
+        <p class="note">This only changes the site for you while you're logged in, on any device.</p>
+        <div class="field"><label for="apLook">Site look</label><select id="apLook"></select></div>
+        <div class="field"><label for="apMode">Light or dark</label><select id="apMode"><option value="">Use this device's choice</option><option value="dark">Dark</option><option value="light">Light</option></select></div>
+        <label class="switch-row"><input type="checkbox" id="apFx"> <span><strong>Holiday effects</strong><br><span class="note">The snow, hearts, and other things that drift down the screen during holidays.</span></span></label>
+        <button class="btn primary" id="apSave">Save appearance</button>
+      </div>
+      <div class="panel" style="max-width:560px">
+        <h3>Games I play</h3>
+        <p class="note">Your games show first, and you'll get a notification when a new night is posted for them.</p>
+        <div id="followPicker" class="follow-picker"></div>
+        <h3 style="margin-top:16px;font-size:17px">Notify me about</h3>
+        <label class="switch-row"><input type="checkbox" id="nfReplies"> <span>Replies to my posts</span></label>
+        <label class="switch-row"><input type="checkbox" id="nfEvents"> <span>New game nights for my games</span></label>
+        <label class="switch-row"><input type="checkbox" id="nfHolds"> <span>Holds and preorders that are ready</span></label>
+        <label class="switch-row"><input type="checkbox" id="nfMessages"> <span>Replies from the store</span></label>
+        <button class="btn primary" id="nfSave">Save</button>
+      </div>
+      <div class="panel">
+        <h3>My messages</h3>
+        <div id="myThreads"></div>
       </div>
       <div class="panel">
         <h3>My game nights</h3>
@@ -240,12 +307,16 @@
     <div id="staffArea" hidden>
     <p id="whoami" class="note" style="margin-bottom:0"></p>
     <div class="staff-nav" role="tablist">
-      <button class="chip" data-staff="inventory" aria-pressed="true">Inventory</button>
+      <button class="chip" data-staff="today" aria-pressed="true">Today</button>
+      <button class="chip" data-staff="inventory" aria-pressed="false">Inventory</button>
       <button class="chip" data-staff="events" aria-pressed="false">Game nights</button>
       <button class="chip" data-staff="news" aria-pressed="false">Announcements</button>
+      <button class="chip" data-staff="results" aria-pressed="false">Results</button>
+      <button class="chip" data-staff="msgs" aria-pressed="false" id="msgChip">Messages</button>
+      <button class="chip" data-staff="reports" aria-pressed="false" id="repChip">Reports</button>
       <button class="chip" data-staff="res" aria-pressed="false" id="resChip">Holds &amp; preorders</button>
       <button class="chip" data-staff="camps" aria-pressed="false" id="campChip">Campaigns</button>
-      <button class="chip" data-staff="blocked" aria-pressed="false">Blocked players</button>
+      <button class="chip" data-staff="blocked" aria-pressed="false">Players</button>
       <button class="chip" data-staff="team" aria-pressed="false" id="teamChip" hidden>Team</button>
       <button class="chip" data-staff="look" aria-pressed="false" id="lookChip" hidden>Site settings</button>
     </div>
@@ -277,6 +348,8 @@
           <tbody id="siHours"></tbody>
         </table></div>
         <div class="field"><label for="siFb">Facebook page link</label><input type="text" id="siFb" maxlength="300" placeholder="https://www.facebook.com/yourstorepage"></div>
+        <div class="field"><label for="siAlert">Email for message alerts</label><input type="text" id="siAlert" maxlength="200" placeholder="owner@email.com" autocomplete="email">
+          <p class="note" style="margin:4px 0 0">Where to send an email when someone messages the store. Emails start once the email service is set up. Until then, new messages show in Staff, then Messages.</p></div>
         <div class="field" style="margin-top:12px"><label for="siNote">Special hours note</label><input type="text" id="siNote" maxlength="160" placeholder="Closed Thanksgiving. Open late Friday for the prerelease."></div>
         <button class="btn primary" id="siSave">Save store info</button>
       </div>
@@ -294,6 +367,55 @@
         <div id="lookPicker" class="look-picker" role="radiogroup" aria-label="Site look"></div>
         <div class="field" style="margin-top:14px"><label for="seasonSel">Holiday theme</label><select id="seasonSel"></select></div>
         <button class="btn primary" id="seasonSave">Save look and theme</button>
+      </div>
+    </div>
+
+    <div data-pane="today">
+      <div id="todayBoard" class="today-grid"></div>
+    </div>
+
+    <div data-pane="results" hidden>
+      <div class="panel" data-fold="addresult">
+        <h3>Post results</h3>
+        <p class="note">Share who won after an event. Only post photos of people who said it's okay, and ask a parent first for kids.</p>
+        <div class="field"><label for="rsEvent">Which game night? (optional)</label><select id="rsEvent"></select></div>
+        <div class="grid3">
+          <div class="field"><label for="rsTitle">Title</label><input type="text" id="rsTitle" maxlength="100" placeholder="Friday Night Magic"></div>
+          <div class="field"><label for="rsGame">Game</label><select id="rsGame"></select></div>
+          <div class="field"><label for="rsDate">Date</label><input type="date" id="rsDate"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label for="rsWinner">Winner</label><input type="text" id="rsWinner" maxlength="80"></div>
+          <div class="field"><label for="rsDeck">Winning deck (optional)</label><input type="text" id="rsDeck" maxlength="100" placeholder="Atraxa Superfriends"></div>
+        </div>
+        <div class="field"><label for="rsPlacings">Other placings (optional, one per line)</label><textarea id="rsPlacings" rows="3" maxlength="1000" placeholder="2nd: Sam&#10;3rd: Priya&#10;4th: Lee"></textarea></div>
+        <div class="field"><label for="rsNotes">Notes (optional)</label><input type="text" id="rsNotes" maxlength="1000" placeholder="12 players, great turnout!"></div>
+        <div class="field"><label class="btn small" style="cursor:pointer;display:inline-flex">Add a photo<input type="file" id="rsPhoto" accept="image/*" hidden></label> <span id="rsPhotoName" class="note"></span></div>
+        <button class="btn primary" id="rsAdd">Post results</button>
+      </div>
+      <div class="panel">
+        <h3>Posted results</h3>
+        <div id="staffResults"></div>
+      </div>
+    </div>
+
+    <div data-pane="msgs" hidden>
+      <div class="panel">
+        <h3>Messages</h3>
+        <p class="note" id="alertNote"></p>
+        <div class="chips" style="margin:6px 0 14px">
+          <button class="chip" data-msgfilter="open" aria-pressed="true">Open</button>
+          <button class="chip" data-msgfilter="closed" aria-pressed="false">Closed</button>
+        </div>
+        <div id="threadList"></div>
+      </div>
+    </div>
+
+    <div data-pane="reports" hidden>
+      <div class="panel">
+        <h3>Reported posts</h3>
+        <p class="note">Players can report community posts and replies. Remove what breaks the rules, or dismiss the report if it's fine.</p>
+        <div id="reportList"></div>
       </div>
     </div>
 
@@ -324,6 +446,12 @@
 
     <div data-pane="blocked" hidden>
       <div class="panel" style="max-width:720px">
+        <h3>Players</h3>
+        <p class="note">Change a player's display name if they picked something that isn't okay. Players can't change their own name.</p>
+        <input type="search" id="plSearch" placeholder="Search players by name" aria-label="Search players" style="max-width:320px;margin-bottom:10px">
+        <div id="playerList"></div>
+      </div>
+      <div class="panel" style="max-width:720px">
         <h3>Blocked players</h3>
         <p class="note">Blocked players can still read the site, but can't post or reply on the community board or sign up for game nights with their account. Block someone from their community post or from a game night roster.</p>
         <div id="blockedList"></div>
@@ -345,7 +473,7 @@
       </div>
     </div>
 
-    <div data-pane="inventory">
+    <div data-pane="inventory" hidden>
       <div class="panel" data-fold="csv" id="csvPanel">
         <h3>Upload inventory</h3>
         <p class="note">Save a spreadsheet as CSV with these columns. Rows with a SKU that already exists get updated. New SKUs get added.</p>
@@ -378,15 +506,15 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</
       </div>
       <div class="panel">
         <h3>Stock on hand</h3>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-          <input type="search" id="invSearch" placeholder="Filter by name, SKU, or barcode" aria-label="Filter inventory" style="max-width:300px">
+        <div class="inv-bar">
+          <input type="search" id="invSearch" placeholder="Filter by name, SKU, or barcode" aria-label="Filter inventory">
           <button class="btn small" id="invScan">Scan to find</button>
+          <button class="btn small" id="invLow" aria-pressed="false">Low stock only</button>
+          <button class="btn small" id="invToggleAll">Open all</button>
           <button class="btn small" id="csvDownload">Download as CSV</button>
         </div>
-        <div class="table-wrap"><table class="stack">
-          <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th class="num">Price</th><th class="num">Qty</th><th></th></tr></thead>
-          <tbody id="invTable"></tbody>
-        </table></div>
+        <p class="note" id="invSummary" style="margin:8px 0 12px"></p>
+        <div id="invGroups"></div>
       </div>
     </div>
 
@@ -445,6 +573,7 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</
       <p><a id="fDir" target="_blank" rel="noopener">Get directions</a></p>
       <p><a id="fPhone"></a></p>
       <p><a id="fFb" target="_blank" rel="noopener" hidden>Find us on Facebook</a></p>
+      <p><a href="#contact">Send us a message</a></p>
     </div>
     <div>
       <h4>Hours</h4>
@@ -455,6 +584,7 @@ PKM-NEXT-BB,Next Pokémon set booster box,tcg,149.99,0,,yes,2026-12-05,pokemon</
   <p class="foot-line"><span id="seasonNote"></span> Titan Game and Hobby. May your rolls be high. <a href="#account">Staff login</a></p>
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<button type="button" class="to-top" id="toTop" aria-label="Back to top" hidden>↑</button>
 <div id="scanModal" class="scan-modal" hidden role="dialog" aria-modal="true" aria-labelledby="scanTitle">
   <div class="scan-box">
     <h3 id="scanTitle">Scan a barcode</h3>
